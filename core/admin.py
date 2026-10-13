@@ -1,3 +1,9 @@
 from django.contrib import admin
+from .models import Organizacion
 
-# Register your models here.
+
+@admin.register(Organizacion)
+class OrganizacionAdmin(admin.ModelAdmin):
+    list_display = ("nombre", "slug", "activa")
+    search_fields = ("nombre",)
+    prepopulated_fields = {"slug": ("nombre",)}
