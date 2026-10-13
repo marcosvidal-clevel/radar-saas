@@ -51,3 +51,28 @@ class Membresia(models.Model):
 
     def __str__(self):
         return f"{self.usuario} - {self.organizacion}"
+
+
+class Sector(models.Model):
+    organizacion = models.ForeignKey(
+        Organizacion,
+        on_delete=models.CASCADE,
+        related_name="sectores",
+    )
+    nombre = models.CharField(max_length=100)
+    descripcion = models.TextField(blank=True)
+    activo = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "Sector"
+        verbose_name_plural = "Sectores"
+        ordering = ["nombre"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organizacion", "nombre"],
+                name="sector_unico_por_organizacion",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.nombre} - {self.organizacion}"
