@@ -237,3 +237,165 @@ class Senal(models.Model):
 
     def __str__(self):
         return self.titulo
+class Oportunidad(models.Model):
+    class Origen(models.TextChoices):
+        CONSULTA_ENTRANTE = "consulta_entrante", "Consulta entrante (caliente)"
+        PROSPECCION = "prospeccion", "Prospección"
+
+    class Canal(models.TextChoices):
+        WEB = "web", "Página web"
+        LINKEDIN = "linkedin", "LinkedIn"
+        WHATSAPP = "whatsapp", "WhatsApp"
+        EMAIL = "email", "Correo electrónico"
+        TELEFONO = "telefono", "Teléfono"
+        REFERIDO = "referido", "Referido"
+        OTRA_RED = "otra_red", "Otra red social"
+        OTRO = "otro", "Otro"
+
+    class Estado(models.TextChoices):
+        NUEVA = "nueva", "Nueva"
+        EN_CONTACTO = "en_contacto", "En contacto"
+        CALIFICADA = "calificada", "Calificada"
+        PROPUESTA = "propuesta", "Propuesta enviada"
+        GANADA = "ganada", "Ganada"
+        PERDIDA = "perdida", "Perdida"
+        DESCARTADA = "descartada", "Descartada"
+
+    organizacion = models.ForeignKey(
+        Organizacion,
+        on_delete=models.PROTECT,
+        related_name="oportunidades",
+    )
+    empresa = models.ForeignKey(
+        EmpresaProspectada,
+        on_delete=models.PROTECT,
+        related_name="oportunidades",
+        null=True,
+        blank=True,
+    )
+    contacto = models.ForeignKey(
+        Contacto,
+        on_delete=models.PROTECT,
+        related_name="oportunidades",
+        null=True,
+        blank=True,
+    )
+    senal = models.ForeignKey(
+        Senal,
+        on_delete=models.PROTECT,
+        related_name="oportunidades",
+        null=True,
+        blank=True,
+    )
+    responsable = models.ForeignKey(
+        Membresia,
+        on_delete=models.PROTECT,
+        related_name="oportunidades",
+        null=True,
+        blank=True,
+    )
+    titulo = models.CharField(max_length=250)
+    origen = models.CharField(
+        max_length=20,
+        choices=Origen.choices,
+    )
+    canal = models.CharField(
+        max_length=20,
+        choices=Canal.choices,
+    )
+    nombre_consultante = models.CharField(max_length=200, blank=True)
+    email_consultante = models.EmailField(blank=True)
+    telefono_consultante = models.CharField(max_length=50, blank=True)
+    necesidad = models.TextField(
+        help_text="Describe la consulta recibida o la necesidad detectada.",
+    )
+    estado = models.CharField(
+        max_length=20,
+        choices=Estado.choices,
+        default=Estado.NUEVA,
+    )
+    proxima_accion = models.TextField(blank=True)
+    fecha_proxima_accion = models.DateField(null=True, blank=True)
+    motivo_cierre = models.TextField(blank=True)
+    notas = models.TextField(blank=True)
+    creada_en = models.DateTimeField(auto_now_add=True)
+    actualizada_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Oportunidad"
+        verbose_name_plural = "Oportunidades"
+        ordering = ["-creada_en"]
+
+    @property
+    def es_caliente(self):
+        return self.origen == self.Origen.CONSULTA_ENTRANTE
+
+    def clean(self):
+        super().clean()
+        errores = {}
+
+        if self.empresa_id and self.organizacion_id:
+            if self.empresa.organizacion_id != self.organizacion_id:
+                errores["empresa"] = (
+                    "La empresa debe pertenecer a la misma organización."
+                )
+
+        if self.contacto_id:
+            if not self.empresa_id:
+                errores["contacto"] = (
+                    "Selecciona la empresa del contacto."
+                )
+            elif self.contacto.empresa_id != self.empresa_id:
+                errores["contacto"] = (
+                    "El contacto debe pertenecer a la empresa seleccionada."
+                )
+
+        if self.senal_id:
+            if not self.empresa_id:
+                errores["senal"] = (
+                    "Selecciona la empresa de la señal."
+                )
+            elif self.senal.empresa_id != self.empresa_id:
+                errores["senal"] = (
+                    "La señal debe pertenecer a la empresa seleccionada."
+                )
+            elif self.senal.estado != Senal.Estado.VALIDADA:
+                errores["senal"] = (
+                    "La señal debe estar validada."
+                )
+
+        if self.responsable_id:
+            if (
+                self.organizacion_id
+                and self.responsable.organizacion_id != self.organizacion_id
+            ):
+                errores["responsable"] = (
+                    "El responsable debe pertenecer a la misma organización."
+                )
+            elif not self.responsable.activa:
+                errores["responsable"] = (
+                    "El responsable debe tener una membresía activa."
+                )
+
+        if self.origen == self.Origen.PROSPECCION and not self.empresa_id:
+            errores["empresa"] = (
+                "Una oportunidad de prospección debe tener una empresa."
+            )
+
+        if self.estado in (
+            self.Estado.PERDIDA,
+            self.Estado.DESCARTADA,
+        ) and not self.motivo_cierre.strip():
+            errores["motivo_cierre"] = (
+                "Indica por qué se pierde o descarta la oportunidad."
+            )
+
+        if errores:
+            raise ValidationError(errores)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.titulo
