@@ -1,13 +1,5 @@
 from django.contrib import admin
-from .models import (
-    Organizacion,
-    Membresia,
-    Sector,
-    EmpresaProspectada,
-    Contacto,
-    Senal,
-)
-from django.contrib import admin
+
 from .models import (
     Organizacion,
     Membresia,
@@ -17,6 +9,8 @@ from .models import (
     Senal,
     Oportunidad,
 )
+
+
 @admin.register(Organizacion)
 class OrganizacionAdmin(admin.ModelAdmin):
     list_display = ("nombre", "slug", "activa")
@@ -63,6 +57,7 @@ class SenalAdmin(admin.ModelAdmin):
     search_fields = ("titulo", "empresa__nombre", "fuente", "evidencia")
     readonly_fields = ("creada_en", "actualizada_en")
     list_select_related = ("empresa",)
+
 
 @admin.register(Oportunidad)
 class OportunidadAdmin(admin.ModelAdmin):
