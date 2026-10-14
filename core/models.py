@@ -129,3 +129,49 @@ class EmpresaProspectada(models.Model):
 
     def __str__(self):
         return self.nombre
+
+
+class Contacto(models.Model):
+    class Tipo(models.TextChoices):
+        POR_CONFIRMAR = "por_confirmar", "Por confirmar"
+        DECISOR = "decisor", "Decisor"
+        INFLUYENTE = "influyente", "Influyente"
+        PUERTA_ENTRADA = "puerta_entrada", "Puerta de entrada"
+        OTRO = "otro", "Otro"
+
+    empresa = models.ForeignKey(
+        EmpresaProspectada,
+        on_delete=models.PROTECT,
+        related_name="contactos",
+    )
+    nombre = models.CharField(max_length=200)
+    cargo = models.CharField(max_length=200, blank=True)
+    email = models.EmailField(blank=True)
+    telefono = models.CharField(max_length=50, blank=True)
+    linkedin = models.URLField(blank=True)
+    tipo = models.CharField(
+        max_length=20,
+        choices=Tipo.choices,
+        default=Tipo.POR_CONFIRMAR,
+    )
+    fuente = models.CharField(max_length=250, blank=True)
+    evidencia_rol = models.TextField(
+        blank=True,
+        help_text="Evidencia que respalda su papel en la decisión comercial.",
+    )
+    notas = models.TextField(blank=True)
+    activo = models.BooleanField(default=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Contacto"
+        verbose_name_plural = "Contactos"
+        ordering = ["nombre"]
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.nombre} - {self.empresa}"

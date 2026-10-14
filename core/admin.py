@@ -1,5 +1,11 @@
 from django.contrib import admin
-from .models import Organizacion, Membresia, Sector, EmpresaProspectada
+from .models import (
+    Organizacion,
+    Membresia,
+    Sector,
+    EmpresaProspectada,
+    Contacto,
+)
 
 
 @admin.register(Organizacion)
@@ -30,3 +36,12 @@ class EmpresaProspectadaAdmin(admin.ModelAdmin):
     search_fields = ("nombre", "sitio_web", "descripcion")
     readonly_fields = ("creada_en", "actualizada_en")
     list_select_related = ("organizacion", "sector")
+
+
+@admin.register(Contacto)
+class ContactoAdmin(admin.ModelAdmin):
+    list_display = ("nombre", "empresa", "cargo", "tipo", "activo")
+    list_filter = ("empresa__organizacion", "tipo", "activo")
+    search_fields = ("nombre", "cargo", "email", "empresa__nombre")
+    readonly_fields = ("creado_en", "actualizado_en")
+    list_select_related = ("empresa",)
