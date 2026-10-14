@@ -1,5 +1,6 @@
 from django.contrib import admin
 
+from .admin_permisos import OrganizacionAdminMixin
 from .models import (
     Organizacion,
     Membresia,
@@ -11,29 +12,79 @@ from .models import (
 )
 
 
+class SoloSuperusuarioAdmin(admin.ModelAdmin):
+    def has_module_permission(self, request):
+        return request.user.is_superuser
+
+    def has_view_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+    def has_add_permission(self, request):
+        return request.user.is_superuser
+
+    def has_change_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+    def has_delete_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+
 @admin.register(Organizacion)
-class OrganizacionAdmin(admin.ModelAdmin):
+class OrganizacionAdmin(SoloSuperusuarioAdmin):
     list_display = ("nombre", "slug", "activa")
     search_fields = ("nombre",)
     prepopulated_fields = {"slug": ("nombre",)}
 
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request)
+
+        if request.user.is_superuser:
+            return queryset
+
+        organizaciones = Membresia.objects.filter(
+            usuario=request.user,
+            activa=True,
+            organizacion__activa=True,
+        ).values_list("organizacion_id", flat=True)
+
+        return queryset.filter(pk__in=organizaciones)
+
 
 @admin.register(Membresia)
-class MembresiaAdmin(admin.ModelAdmin):
+class MembresiaAdmin(OrganizacionAdminMixin, SoloSuperusuarioAdmin):
     list_display = ("usuario", "organizacion", "rol", "activa")
     list_filter = ("organizacion", "rol", "activa")
     search_fields = ("usuario__username", "organizacion__nombre")
 
+    # Permite buscar responsables de la propia organización.
+    # No permite editar ni crear membresías.
+    def has_view_permission(self, request, obj=None):
+        if request.user.is_superuser:
+            return True
+
+        return (
+            request.user.has_perm("core.view_membresia")
+            and self.objeto_permitido(request, obj)
+        )
+
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request)
+
+        if request.user.is_superuser:
+            return queryset
+
+        return queryset.filter(activa=True)
+
 
 @admin.register(Sector)
-class SectorAdmin(admin.ModelAdmin):
+class SectorAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
     list_display = ("nombre", "organizacion", "activo")
     list_filter = ("organizacion", "activo")
     search_fields = ("nombre", "organizacion__nombre")
 
 
 @admin.register(EmpresaProspectada)
-class EmpresaProspectadaAdmin(admin.ModelAdmin):
+class EmpresaProspectadaAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
     list_display = ("nombre", "organizacion", "sector", "pais", "activa")
     list_filter = ("organizacion", "sector", "pais", "activa")
     search_fields = ("nombre", "sitio_web", "descripcion")
@@ -42,7 +93,9 @@ class EmpresaProspectadaAdmin(admin.ModelAdmin):
 
 
 @admin.register(Contacto)
-class ContactoAdmin(admin.ModelAdmin):
+class ContactoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
+    organizacion_lookup = "empresa__organizacion_id"
+
     list_display = ("nombre", "empresa", "cargo", "tipo", "activo")
     list_filter = ("empresa__organizacion", "tipo", "activo")
     search_fields = ("nombre", "cargo", "email", "empresa__nombre")
@@ -51,7 +104,9 @@ class ContactoAdmin(admin.ModelAdmin):
 
 
 @admin.register(Senal)
-class SenalAdmin(admin.ModelAdmin):
+class SenalAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
+    organizacion_lookup = "empresa__organizacion_id"
+
     list_display = ("titulo", "empresa", "tipo", "estado", "fecha_evento")
     list_filter = ("empresa__organizacion", "tipo", "estado")
     search_fields = ("titulo", "empresa__nombre", "fuente", "evidencia")
@@ -60,7 +115,7 @@ class SenalAdmin(admin.ModelAdmin):
 
 
 @admin.register(Oportunidad)
-class OportunidadAdmin(admin.ModelAdmin):
+class OportunidadAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
     list_display = (
         "titulo",
         "organizacion",
