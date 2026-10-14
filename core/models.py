@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 
 
@@ -76,3 +77,55 @@ class Sector(models.Model):
 
     def __str__(self):
         return f"{self.nombre} - {self.organizacion}"
+
+
+class EmpresaProspectada(models.Model):
+    organizacion = models.ForeignKey(
+        Organizacion,
+        on_delete=models.PROTECT,
+        related_name="empresas_prospectadas",
+    )
+    sector = models.ForeignKey(
+        Sector,
+        on_delete=models.PROTECT,
+        related_name="empresas_prospectadas",
+    )
+    nombre = models.CharField(max_length=200)
+    sitio_web = models.URLField(blank=True)
+    linkedin = models.URLField(blank=True)
+    pais = models.CharField(max_length=100, default="Chile")
+    ciudad = models.CharField(max_length=100, blank=True)
+    descripcion = models.TextField(blank=True)
+    notas = models.TextField(blank=True)
+    activa = models.BooleanField(default=True)
+    creada_en = models.DateTimeField(auto_now_add=True)
+    actualizada_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Empresa prospectada"
+        verbose_name_plural = "Empresas prospectadas"
+        ordering = ["nombre"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organizacion", "nombre"],
+                name="empresa_unica_por_organizacion",
+            )
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.sector_id and self.organizacion_id:
+            if self.sector.organizacion_id != self.organizacion_id:
+                raise ValidationError({
+                    "sector": (
+                        "El sector debe pertenecer a la misma "
+                        "organización que la empresa prospectada."
+                    )
+                })
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.nombre
