@@ -5,6 +5,7 @@ from .models import (
     Sector,
     EmpresaProspectada,
     Contacto,
+    Senal,
 )
 
 
@@ -44,4 +45,13 @@ class ContactoAdmin(admin.ModelAdmin):
     list_filter = ("empresa__organizacion", "tipo", "activo")
     search_fields = ("nombre", "cargo", "email", "empresa__nombre")
     readonly_fields = ("creado_en", "actualizado_en")
+    list_select_related = ("empresa",)
+
+
+@admin.register(Senal)
+class SenalAdmin(admin.ModelAdmin):
+    list_display = ("titulo", "empresa", "tipo", "estado", "fecha_evento")
+    list_filter = ("empresa__organizacion", "tipo", "estado")
+    search_fields = ("titulo", "empresa__nombre", "fuente", "evidencia")
+    readonly_fields = ("creada_en", "actualizada_en")
     list_select_related = ("empresa",)

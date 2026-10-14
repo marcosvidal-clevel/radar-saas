@@ -1,8 +1,6 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
-
-
 class Organizacion(models.Model):
     nombre = models.CharField(max_length=200)
     slug = models.SlugField(unique=True)
@@ -175,3 +173,67 @@ class Contacto(models.Model):
 
     def __str__(self):
         return f"{self.nombre} - {self.empresa}"
+
+class Senal(models.Model):
+    class Tipo(models.TextChoices):
+        INVERSION = "inversion", "Inversión"
+        ADJUDICACION = "adjudicacion", "Adjudicación"
+        EXPANSION = "expansion", "Expansión"
+        CAMBIO_EJECUTIVO = "cambio_ejecutivo", "Cambio ejecutivo"
+        CONTRATACION = "contratacion", "Contratación"
+        OTRO = "otro", "Otro"
+
+    class Estado(models.TextChoices):
+        PENDIENTE = "pendiente", "Pendiente de revisión"
+        VALIDADA = "validada", "Validada"
+        DESCARTADA = "descartada", "Descartada"
+
+    empresa = models.ForeignKey(
+        EmpresaProspectada,
+        on_delete=models.PROTECT,
+        related_name="senales",
+    )
+    titulo = models.CharField(max_length=250)
+    tipo = models.CharField(
+        max_length=20,
+        choices=Tipo.choices,
+        default=Tipo.OTRO,
+    )
+    fecha_evento = models.DateField(null=True, blank=True)
+    fuente = models.CharField(max_length=250)
+    enlace = models.URLField(blank=True)
+    evidencia = models.TextField(
+        help_text="Describe el hecho observado y su respaldo.",
+    )
+    hipotesis_comercial = models.TextField(
+        blank=True,
+        help_text="Posible necesidad comercial; separada del hecho observado.",
+    )
+    estado = models.CharField(
+        max_length=20,
+        choices=Estado.choices,
+        default=Estado.PENDIENTE,
+    )
+    motivo_descarte = models.TextField(blank=True)
+    creada_en = models.DateTimeField(auto_now_add=True)
+    actualizada_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Señal"
+        verbose_name_plural = "Señales"
+        ordering = ["-creada_en"]
+
+    def clean(self):
+        super().clean()
+        if self.estado == self.Estado.DESCARTADA:
+            if not self.motivo_descarte.strip():
+                raise ValidationError({
+                    "motivo_descarte": "Indica por qué se descarta la señal."
+                })
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.titulo
