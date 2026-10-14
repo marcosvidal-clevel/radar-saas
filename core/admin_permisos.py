@@ -1,18 +1,47 @@
 from django.core.exceptions import PermissionDenied
+from django.db.models import Q
 
 from .models import Membresia
 
 
 class OrganizacionAdminMixin:
-    # Cada administrador indicará cómo llegar a la organización.
     organizacion_lookup = "organizacion_id"
 
-    def organizaciones_permitidas(self, request):
+    ROLES_GESTION = (
+        Membresia.Rol.ADMINISTRADOR,
+        Membresia.Rol.SUPERVISOR,
+    )
+
+    def membresias_usuario(self, request):
         return Membresia.objects.filter(
             usuario=request.user,
             activa=True,
             organizacion__activa=True,
-        ).values_list("organizacion_id", flat=True)
+        )
+
+    def organizaciones_permitidas(self, request, roles=None):
+        membresias = self.membresias_usuario(request)
+
+        if roles is not None:
+            membresias = membresias.filter(rol__in=roles)
+
+        return membresias.values_list("organizacion_id", flat=True)
+
+    def es_oportunidad(self):
+        return self.model._meta.model_name == "oportunidad"
+
+    def organizacion_objeto(self, obj):
+        valor = obj
+
+        for parte in self.organizacion_lookup.split("__"):
+            valor = getattr(valor, parte)
+
+        return valor
+
+    def rol_en_organizacion(self, request, organizacion_id):
+        return self.membresias_usuario(request).filter(
+            organizacion_id=organizacion_id
+        ).values_list("rol", flat=True).first()
 
     def get_queryset(self, request):
         queryset = super().get_queryset(request)
@@ -20,23 +49,81 @@ class OrganizacionAdminMixin:
         if request.user.is_superuser:
             return queryset
 
-        return queryset.filter(
+        queryset = queryset.filter(
             **{
                 f"{self.organizacion_lookup}__in":
                     self.organizaciones_permitidas(request)
             }
         )
 
+        if self.es_oportunidad():
+            organizaciones_gestion = self.organizaciones_permitidas(
+                request,
+                self.ROLES_GESTION,
+            )
+            queryset = queryset.filter(
+                Q(organizacion_id__in=organizaciones_gestion)
+                | Q(
+                    responsable__usuario=request.user,
+                    responsable__activa=True,
+                )
+            )
+
+        return queryset
+
     def objeto_permitido(self, request, obj=None):
         if request.user.is_superuser:
             return True
 
-        organizaciones = self.organizaciones_permitidas(request)
-
         if obj is None:
-            return organizaciones.exists()
+            return self.membresias_usuario(request).exists()
 
         return self.get_queryset(request).filter(pk=obj.pk).exists()
+
+    def puede_segun_rol(self, request, accion, obj=None):
+        if request.user.is_superuser:
+            return True
+
+        if accion == "view":
+            return self.objeto_permitido(request, obj)
+
+        roles = (
+            (Membresia.Rol.ADMINISTRADOR,)
+            if accion == "delete"
+            else self.ROLES_GESTION
+        )
+
+        if obj is None:
+            if self.organizaciones_permitidas(request, roles).exists():
+                return True
+
+            if accion == "change" and self.es_oportunidad():
+                return self.get_queryset(request).filter(
+                    responsable__usuario=request.user,
+                    responsable__rol=Membresia.Rol.COLABORADOR,
+                ).exists()
+
+            return False
+
+        if not self.objeto_permitido(request, obj):
+            return False
+
+        rol = self.rol_en_organizacion(
+            request,
+            self.organizacion_objeto(obj),
+        )
+
+        if rol in roles:
+            return True
+
+        return (
+            accion == "change"
+            and self.es_oportunidad()
+            and rol == Membresia.Rol.COLABORADOR
+            and obj.responsable_id is not None
+            and obj.responsable.usuario_id == request.user.pk
+            and obj.responsable.activa
+        )
 
     def has_module_permission(self, request):
         return (
@@ -47,26 +134,41 @@ class OrganizacionAdminMixin:
     def has_view_permission(self, request, obj=None):
         return (
             super().has_view_permission(request, obj)
-            and self.objeto_permitido(request, obj)
+            and self.puede_segun_rol(request, "view", obj)
         )
 
     def has_add_permission(self, request):
         return (
             super().has_add_permission(request)
-            and self.objeto_permitido(request)
+            and self.puede_segun_rol(request, "add")
         )
 
     def has_change_permission(self, request, obj=None):
         return (
             super().has_change_permission(request, obj)
-            and self.objeto_permitido(request, obj)
+            and self.puede_segun_rol(request, "change", obj)
         )
 
     def has_delete_permission(self, request, obj=None):
         return (
             super().has_delete_permission(request, obj)
-            and self.objeto_permitido(request, obj)
+            and self.puede_segun_rol(request, "delete", obj)
         )
+
+    def get_readonly_fields(self, request, obj=None):
+        campos = list(super().get_readonly_fields(request, obj))
+
+        if (
+            not request.user.is_superuser
+            and obj is not None
+            and self.es_oportunidad()
+            and self.rol_en_organizacion(
+                request, obj.organizacion_id
+            ) == Membresia.Rol.COLABORADOR
+        ):
+            campos.extend(("organizacion", "responsable"))
+
+        return tuple(dict.fromkeys(campos))
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if not request.user.is_superuser:
@@ -82,11 +184,15 @@ class OrganizacionAdminMixin:
             ruta = rutas.get(modelo._meta.model_name)
 
             if ruta:
+                organizaciones = self.organizaciones_permitidas(request)
+
+                if db_field.name == "organizacion":
+                    organizaciones = self.organizaciones_permitidas(
+                        request, self.ROLES_GESTION
+                    )
+
                 queryset = modelo._default_manager.filter(
-                    **{
-                        f"{ruta}__in":
-                            self.organizaciones_permitidas(request)
-                    }
+                    **{f"{ruta}__in": organizaciones}
                 )
 
                 if modelo == Membresia:
@@ -104,7 +210,6 @@ class OrganizacionAdminMixin:
         if request.user.is_superuser:
             return filtros
 
-        # Estos filtros podrían mostrar nombres de otras organizaciones.
         filtros_compartidos = {
             "organizacion",
             "empresa__organizacion",
@@ -119,14 +224,50 @@ class OrganizacionAdminMixin:
 
     def save_model(self, request, obj, form, change):
         if not request.user.is_superuser:
-            valor = obj
+            organizacion_id = self.organizacion_objeto(obj)
+            rol_destino = self.rol_en_organizacion(
+                request, organizacion_id
+            )
 
-            for parte in self.organizacion_lookup.split("__"):
-                valor = getattr(valor, parte)
+            if change:
+                original = self.get_queryset(request).filter(
+                    pk=obj.pk
+                ).first()
 
-            if valor not in self.organizaciones_permitidas(request):
+                if original is None or not self.has_change_permission(
+                    request, original
+                ):
+                    raise PermissionDenied(
+                        "No puedes modificar este registro."
+                    )
+
+                rol_original = self.rol_en_organizacion(
+                    request,
+                    self.organizacion_objeto(original),
+                )
+
+                if rol_original == Membresia.Rol.COLABORADOR:
+                    if (
+                        organizacion_id
+                        != self.organizacion_objeto(original)
+                        or obj.responsable_id != original.responsable_id
+                    ):
+                        raise PermissionDenied(
+                            "No puedes cambiar la organización "
+                            "ni el responsable de esta oportunidad."
+                        )
+                elif rol_destino not in self.ROLES_GESTION:
+                    raise PermissionDenied(
+                        "No puedes trasladar el registro "
+                        "a esta organización."
+                    )
+
+            elif (
+                not self.has_add_permission(request)
+                or rol_destino not in self.ROLES_GESTION
+            ):
                 raise PermissionDenied(
-                    "No puedes guardar datos de esta organización."
+                    "No puedes crear registros en esta organización."
                 )
 
         super().save_model(request, obj, form, change)
