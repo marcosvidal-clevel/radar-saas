@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="es-CL">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RADAR | Panel comercial</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --fondo: #f3f5f8;
+      --texto: #182b3a;
+      --secundario: #526474;
+      --borde: #dce3ea;
+      --azul: #164b63;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--fondo);
+      color: var(--texto);
+      font-family: Arial, sans-serif;
+      line-height: 1.5;
+    }
+    a { color: var(--azul); }
+    a:focus-visible, button:focus-visible {
+      outline: 3px solid #d79416;
+      outline-offset: 4px;
+    }
+    .barra {
+      background: #142f40;
+      color: white;
+      padding: 18px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+    .marca { font-size: 24px; letter-spacing: 3px; font-weight: bold; }
+    .barra a { color: white; }
+    .usuario { font-size: 14px; }
+    main { max-width: 1280px; margin: auto; padding: 32px 24px; }
+    .cabecera {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+    }
+    h1 { margin: 0 0 6px; font-size: 30px; }
+    .subtitulo { margin: 0; color: var(--secundario); }
+    .boton {
+      display: inline-block;
+      background: var(--azul);
+      color: white;
+      text-decoration: none;
+      padding: 11px 18px;
+      border-radius: 8px;
+    }
+    .indicadores {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+    .indicador {
+      background: white;
+      border: 1px solid var(--borde);
+      border-radius: 12px;
+      padding: 18px;
+      border-top: 4px solid var(--azul);
+    }
+    .indicador.caliente { border-top-color: #bc532e; }
+    .indicador.vencida { border-top-color: #b22d3b; }
+    .indicador.hoy { border-top-color: #19836a; }
+    .indicador.sin-fecha { border-top-color: #8b731e; }
+    .etiqueta { color: var(--secundario); font-size: 14px; }
+    .numero { display: block; font-size: 34px; font-weight: bold; }
+    .seccion {
+      background: white;
+      border: 1px solid var(--borde);
+      border-radius: 12px;
+      margin-bottom: 24px;
+      overflow: hidden;
+    }
+    .titulo-seccion { padding: 20px 22px 14px; }
+    h2 { margin: 0 0 5px; font-size: 21px; }
+    .titulo-seccion p {
+      margin: 0;
+      color: var(--secundario);
+      font-size: 14px;
+    }
+    .tabla { overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; min-width: 650px; }
+    th {
+      text-align: left;
+      background: #f7f9fb;
+      color: var(--secundario);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+    th, td { padding: 14px 22px; border-bottom: 1px solid var(--borde); }
+    td { font-size: 14px; vertical-align: top; }
+    tr:last-child td { border-bottom: 0; }
+    .titulo-oportunidad { font-weight: bold; text-decoration: none; }
+    .detalle { display: block; color: var(--secundario); margin-top: 4px; }
+    .estado {
+      display: inline-block;
+      background: #edf3f7;
+      padding: 4px 9px;
+      border-radius: 6px;
+      white-space: nowrap;
+    }
+    .fecha-vencida { color: #a32635; font-weight: bold; }
+    .vacio { padding: 12px 22px 24px; color: var(--secundario); }
+    footer { color: var(--secundario); font-size: 13px; padding: 8px 0; }
+    @media (max-width: 950px) {
+      .indicadores { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 600px) {
+      main { padding: 24px 14px; }
+      .barra { padding: 16px; }
+      h1 { font-size: 25px; }
+      .indicadores { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .indicador { padding: 14px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="barra">
+    <div class="marca">RADAR</div>
+    <nav class="usuario" aria-label="Navegación principal">
+      {{ request.user.username }} ·
+      <a href="{% url 'admin:index' %}">Administración</a> ·
+      <a href="{% url 'admin:core_oportunidad_changelist' %}">Oportunidades</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="cabecera">
+      <div>
+        <h1>Panel comercial</h1>
+        <p class="subtitulo">
+          {{ hoy|date:"j \d\e F \d\e Y" }} · Oportunidades y próximos pasos
+        </p>
+      </div>
+      {% if puede_crear %}
+        <a class="boton" href="{% url 'admin:core_oportunidad_add' %}">
+          Nueva oportunidad
+        </a>
+      {% endif %}
+    </div>
+
+    <section class="indicadores" aria-label="Indicadores comerciales">
+      <div class="indicador">
+        <span class="etiqueta">Oportunidades activas</span>
+        <span class="numero">{{ total_activas }}</span>
+      </div>
+      <div class="indicador caliente">
+        <span class="etiqueta">Consultas calientes activas</span>
+        <span class="numero">{{ total_calientes }}</span>
+      </div>
+      <div class="indicador vencida">
+        <span class="etiqueta">Seguimientos vencidos</span>
+        <span class="numero">{{ total_vencidas }}</span>
+      </div>
+      <div class="indicador hoy">
+        <span class="etiqueta">Seguimientos para hoy</span>
+        <span class="numero">{{ total_para_hoy }}</span>
+      </div>
+      <div class="indicador sin-fecha">
+        <span class="etiqueta">Sin fecha de seguimiento</span>
+        <span class="numero">{{ total_sin_fecha }}</span>
+      </div>
+    </section>
+
+    <section class="seccion">
+      <div class="titulo-seccion">
+        <h2>Consultas calientes</h2>
+        <p>Consultas comerciales entrantes activas. Hasta 20 registros, del más reciente al más antiguo.</p>
+      </div>
+      {% if calientes %}
+        <div class="tabla">
+          <table>
+            <caption class="vacio">Oportunidades calientes activas</caption>
+            <thead>
+              <tr>
+                <th scope="col">Oportunidad</th>
+                <th scope="col">Canal</th>
+                <th scope="col">Estado</th>
+                <th scope="col">Responsable</th>
+                <th scope="col">Seguimiento</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for oportunidad in calientes %}
+                <tr>
+                  <td>
+                    <a class="titulo-oportunidad"
+                       href="{% url 'admin:core_oportunidad_change' oportunidad.pk %}">
+                      {{ oportunidad.titulo }}
+                    </a>
+                    <span class="detalle">
+                      {{ oportunidad.organizacion.nombre }} ·
+                      {{ oportunidad.empresa.nombre|default:"Empresa por identificar" }}
+                    </span>
+                  </td>
+                  <td>{{ oportunidad.get_canal_display }}</td>
+                  <td><span class="estado">{{ oportunidad.get_estado_display }}</span></td>
+                  <td>{{ oportunidad.responsable.usuario.username|default:"Sin asignar" }}</td>
+                  <td>
+                    {% if oportunidad.fecha_proxima_accion %}
+                      {{ oportunidad.fecha_proxima_accion|date:"d/m/Y" }}
+                    {% else %}
+                      Sin fecha
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="vacio">No tienes consultas calientes activas visibles.</p>
+      {% endif %}
+    </section>
+
+    <section class="seccion">
+      <div class="titulo-seccion">
+        <h2>Seguimientos para hoy y vencidos</h2>
+        <p>Hasta 20 oportunidades activas, ordenadas por la fecha más antigua.</p>
+      </div>
+      {% if seguimientos %}
+        <div class="tabla">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Fecha</th>
+                <th scope="col">Oportunidad</th>
+                <th scope="col">Próxima acción</th>
+                <th scope="col">Responsable</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for oportunidad in seguimientos %}
+                <tr>
+                  <td>
+                    {% if oportunidad.fecha_proxima_accion < hoy %}
+                      <span class="fecha-vencida">
+                        {{ oportunidad.fecha_proxima_accion|date:"d/m/Y" }} · Vencido
+                      </span>
+                    {% else %}
+                      {{ oportunidad.fecha_proxima_accion|date:"d/m/Y" }} · Hoy
+                    {% endif %}
+                  </td>
+                  <td>
+                    <a class="titulo-oportunidad"
+                       href="{% url 'admin:core_oportunidad_change' oportunidad.pk %}">
+                      {{ oportunidad.titulo }}
+                    </a>
+                    <span class="detalle">{{ oportunidad.organizacion.nombre }}</span>
+                  </td>
+                  <td>{{ oportunidad.proxima_accion|default:"Acción por definir"|linebreaksbr }}</td>
+                  <td>{{ oportunidad.responsable.usuario.username|default:"Sin asignar" }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="vacio">No tienes seguimientos para hoy ni vencidos.</p>
+      {% endif %}
+    </section>
+
+    <section class="seccion">
+      <div class="titulo-seccion">
+        <h2>Oportunidades sin fecha de seguimiento</h2>
+        <p>Define cuándo realizar la próxima acción. Se muestran hasta 20 registros.</p>
+      </div>
+      {% if sin_fecha %}
+        <div class="tabla">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Oportunidad</th>
+                <th scope="col">Estado</th>
+                <th scope="col">Próxima acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for oportunidad in sin_fecha %}
+                <tr>
+                  <td>
+                    <a class="titulo-oportunidad"
+                       href="{% url 'admin:core_oportunidad_change' oportunidad.pk %}">
+                      {{ oportunidad.titulo }}
+                    </a>
+                    <span class="detalle">{{ oportunidad.organizacion.nombre }}</span>
+                  </td>
+                  <td>{{ oportunidad.get_estado_display }}</td>
+                  <td>{{ oportunidad.proxima_accion|default:"Acción por definir"|linebreaksbr }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="vacio">Todas tus oportunidades activas visibles tienen una fecha de seguimiento.</p>
+      {% endif %}
+    </section>
+
+    <footer>
+      Los indicadores incluyen únicamente las oportunidades que puedes consultar.
+      Las ganadas, perdidas y descartadas quedan fuera de las listas activas.
+    </footer>
+  </main>
+</body>
+</html>
