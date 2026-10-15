@@ -85,11 +85,7 @@
       margin-top: 16px;
     }
     .campo-busqueda { grid-column: 1 / -1; }
-    .campo label {
-      display: block;
-      font-size: 14px;
-      margin-bottom: 6px;
-    }
+    .campo label { display: block; font-size: 14px; margin-bottom: 6px; }
     .campo select, .campo input {
       width: 100%;
       min-height: 46px;
@@ -100,11 +96,7 @@
       color: var(--texto);
       font: inherit;
     }
-    .ayuda {
-      margin: 6px 0 0;
-      color: var(--secundario);
-      font-size: 13px;
-    }
+    .ayuda { margin: 6px 0 0; color: var(--secundario); font-size: 13px; }
     .acciones-filtros {
       display: flex;
       gap: 8px;
@@ -143,11 +135,7 @@
       overflow: hidden;
     }
     .titulo-seccion { padding: 20px 22px 14px; }
-    .titulo-seccion p {
-      margin: 0;
-      color: var(--secundario);
-      font-size: 14px;
-    }
+    .titulo-seccion p { margin: 0; color: var(--secundario); font-size: 14px; }
     .tabla { overflow-x: auto; }
     table { border-collapse: collapse; width: 100%; min-width: 650px; }
     th {
@@ -217,7 +205,7 @@
         </p>
       </div>
       {% if puede_crear %}
-        <a class="boton" href="{% url 'admin:core_oportunidad_add' %}">
+        <a class="boton" href="{% url 'nueva_oportunidad' %}">
           Nueva oportunidad
         </a>
       {% endif %}

@@ -9,7 +9,10 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
-from .forms import SeguimientoOportunidadForm
+from .forms import (
+    NuevaOportunidadForm,
+    SeguimientoOportunidadForm,
+)
 from .models import Membresia, Oportunidad
 
 
@@ -167,6 +170,57 @@ def panel_comercial(request):
 
 @staff_member_required(login_url="admin:login")
 @require_http_methods(["GET", "POST"])
+def nueva_oportunidad(request):
+    administrador = admin.site._registry[Oportunidad]
+
+    if not administrador.has_add_permission(request):
+        raise PermissionDenied(
+            "No tienes permiso para crear oportunidades."
+        )
+
+    if not administrador.has_view_permission(request):
+        raise PermissionDenied(
+            "No tienes permiso para consultar las oportunidades."
+        )
+
+    formulario = NuevaOportunidadForm(
+        request.POST if request.method == "POST" else None,
+        usuario=request.user,
+    )
+
+    if request.method == "POST" and formulario.is_valid():
+        try:
+            oportunidad = formulario.save()
+        except ValidationError as error:
+            # Conserva los datos enviados y muestra los errores.
+            if hasattr(error, "message_dict"):
+                for campo, errores in error.message_dict.items():
+                    destino = (
+                        campo if campo in formulario.fields else None
+                    )
+                    for mensaje in errores:
+                        formulario.add_error(destino, mensaje)
+            else:
+                formulario.add_error(None, error)
+        else:
+            messages.success(
+                request,
+                "Oportunidad creada correctamente.",
+            )
+            return redirect(
+                "detalle_oportunidad",
+                pk=oportunidad.pk,
+            )
+
+    return render(
+        request,
+        "core/nueva_oportunidad.html",
+        {"formulario": formulario},
+    )
+
+
+@staff_member_required(login_url="admin:login")
+@require_http_methods(["GET", "POST"])
 def detalle_oportunidad(request, pk):
     administrador = admin.site._registry[Oportunidad]
 
@@ -209,7 +263,6 @@ def detalle_oportunidad(request, pk):
 
         if formulario.is_valid():
             try:
-                # Solo guarda los campos de seguimiento autorizados.
                 oportunidad.save(
                     update_fields=(
                         "estado",
@@ -234,8 +287,6 @@ def detalle_oportunidad(request, pk):
                     pk=oportunidad.pk,
                 )
 
-        # La ficha muestra los datos guardados; el formulario conserva
-        # los valores enviados y sus errores.
         oportunidad.refresh_from_db()
 
     elif puede_editar:

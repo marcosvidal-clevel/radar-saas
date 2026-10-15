@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="es-CL">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nueva oportunidad | RADAR</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --fondo: #f3f5f8;
+      --texto: #182b3a;
+      --secundario: #526474;
+      --borde: #dce3ea;
+      --azul: #164b63;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--fondo);
+      color: var(--texto);
+      font-family: Arial, sans-serif;
+      line-height: 1.5;
+    }
+
+    a { color: var(--azul); }
+
+    a:focus-visible,
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible {
+      outline: 3px solid #d79416;
+      outline-offset: 3px;
+    }
+
+    .barra {
+      background: #142f40;
+      color: white;
+      padding: 18px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+
+    .marca {
+      font-size: 24px;
+      letter-spacing: 3px;
+      font-weight: bold;
+    }
+
+    .barra a { color: white; }
+    .usuario { font-size: 14px; }
+
+    main {
+      max-width: 1000px;
+      margin: auto;
+      padding: 32px 24px;
+    }
+
+    .volver {
+      display: inline-block;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 30px;
+    }
+
+    .introduccion {
+      margin: 0 0 24px;
+      color: var(--secundario);
+    }
+
+    .tarjeta {
+      background: white;
+      border: 1px solid var(--borde);
+      border-radius: 12px;
+      padding: 24px;
+    }
+
+    .rejilla {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 22px;
+    }
+
+    .campo { min-width: 0; }
+    .completo { grid-column: 1 / -1; }
+
+    label {
+      display: block;
+      font-weight: bold;
+      margin-bottom: 7px;
+    }
+
+    .obligatorio {
+      font-size: 12px;
+      font-weight: normal;
+      color: var(--secundario);
+      margin-left: 5px;
+    }
+
+    input,
+    select,
+    textarea {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      border: 1px solid #a9bac7;
+      border-radius: 6px;
+      padding: 10px 12px;
+      background: white;
+      color: var(--texto);
+      font: inherit;
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 90px;
+    }
+
+    .ayuda {
+      margin: 7px 0 0;
+      font-size: 13px;
+      color: var(--secundario);
+    }
+
+    .errorlist {
+      color: #8f2230;
+      margin: 8px 0 0;
+      padding-left: 20px;
+    }
+
+    .con-error input,
+    .con-error select,
+    .con-error textarea {
+      border-color: #a32635;
+    }
+
+    .aviso-error {
+      background: #fff0f1;
+      border-left: 4px solid #a32635;
+      color: #8f2230;
+      padding: 14px 16px;
+      margin-bottom: 24px;
+    }
+
+    .aviso-error p { margin: 0; }
+
+    .acciones {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+      padding-top: 26px;
+      margin-top: 26px;
+      border-top: 1px solid var(--borde);
+    }
+
+    button {
+      border: 0;
+      border-radius: 8px;
+      background: var(--azul);
+      color: white;
+      padding: 12px 20px;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    button:hover { background: #103b50; }
+
+    footer {
+      color: var(--secundario);
+      font-size: 13px;
+      margin-top: 20px;
+    }
+
+    @media (max-width: 700px) {
+      main { padding: 24px 14px; }
+      .barra { padding: 16px; }
+      .tarjeta { padding: 20px; }
+      .rejilla { grid-template-columns: 1fr; }
+      h1 { font-size: 26px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="barra">
+    <div class="marca">RADAR</div>
+    <nav class="usuario" aria-label="Navegación principal">
+      {{ request.user.username }} ·
+      <a href="{% url 'panel_comercial' %}">Panel comercial</a> ·
+      <a href="{% url 'admin:index' %}">Administración</a>
+    </nav>
+  </header>
+
+  <main>
+    <a class="volver" href="{% url 'panel_comercial' %}">
+      ← Volver al panel
+    </a>
+
+    <h1>Nueva oportunidad</h1>
+    <p class="introduccion">
+      Registra una consulta entrante o una oportunidad de prospección
+      y define el próximo paso comercial.
+      Los campos marcados como obligatorios deben completarse.
+    </p>
+
+    <section class="tarjeta" aria-label="Registro de oportunidad">
+      <form method="post" action="{% url 'nueva_oportunidad' %}">
+        {% csrf_token %}
+
+        {% if formulario.errors %}
+          <div class="aviso-error" role="alert">
+            <p>
+              Revisa los campos indicados.
+              La oportunidad no se guardó.
+            </p>
+            {{ formulario.non_field_errors }}
+          </div>
+        {% endif %}
+
+        <div class="rejilla">
+          {% for campo in formulario %}
+            <div class="campo{% if campo.errors %} con-error{% endif %}{% if campo.name == 'titulo' or campo.name == 'necesidad' or campo.name == 'proxima_accion' or campo.name == 'motivo_cierre' or campo.name == 'notas' %} completo{% endif %}">
+              <label for="{{ campo.id_for_label }}">
+                {{ campo.label }}
+                {% if campo.field.required %}
+                  <span class="obligatorio">Obligatorio</span>
+                {% endif %}
+              </label>
+
+              {{ campo }}
+              {{ campo.errors }}
+
+              {% if campo.help_text %}
+                <p class="ayuda">{{ campo.help_text }}</p>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+
+        <div class="acciones">
+          <button type="submit">Crear oportunidad</button>
+          <a href="{% url 'panel_comercial' %}">Cancelar</a>
+        </div>
+      </form>
+    </section>
+
+    <footer>
+      Las empresas, contactos, señales y responsables deben
+      corresponder a la organización elegida.
+      Las oportunidades de prospección requieren una empresa.
+    </footer>
+  </main>
+</body>
+</html>
