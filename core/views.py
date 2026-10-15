@@ -1,13 +1,15 @@
 from urllib.parse import urlencode
 
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.contrib.admin.views.decorators import staff_member_required
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db.models import Q
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.views.decorators.http import require_http_methods
 
+from .forms import SeguimientoOportunidadForm
 from .models import Membresia, Oportunidad
 
 
@@ -164,6 +166,7 @@ def panel_comercial(request):
 
 
 @staff_member_required(login_url="admin:login")
+@require_http_methods(["GET", "POST"])
 def detalle_oportunidad(request, pk):
     administrador = admin.site._registry[Oportunidad]
 
@@ -172,7 +175,6 @@ def detalle_oportunidad(request, pk):
             "No tienes acceso a las oportunidades comerciales."
         )
 
-    # Busca únicamente entre los registros autorizados.
     oportunidades = administrador.get_queryset(request).select_related(
         "organizacion",
         "empresa",
@@ -188,13 +190,64 @@ def detalle_oportunidad(request, pk):
             "No tienes acceso a esta oportunidad."
         )
 
+    puede_editar = administrador.has_change_permission(
+        request,
+        oportunidad,
+    )
+    formulario = None
+
+    if request.method == "POST":
+        if not puede_editar:
+            raise PermissionDenied(
+                "No tienes permiso para actualizar esta oportunidad."
+            )
+
+        formulario = SeguimientoOportunidadForm(
+            request.POST,
+            instance=oportunidad,
+        )
+
+        if formulario.is_valid():
+            try:
+                # Solo guarda los campos de seguimiento autorizados.
+                oportunidad.save(
+                    update_fields=(
+                        "estado",
+                        "proxima_accion",
+                        "fecha_proxima_accion",
+                        "motivo_cierre",
+                        "actualizada_en",
+                    )
+                )
+            except ValidationError as error:
+                formulario.add_error(
+                    None,
+                    "No se pudo guardar: " + " ".join(error.messages),
+                )
+            else:
+                messages.success(
+                    request,
+                    "Seguimiento actualizado correctamente.",
+                )
+                return redirect(
+                    "detalle_oportunidad",
+                    pk=oportunidad.pk,
+                )
+
+        # La ficha muestra los datos guardados; el formulario conserva
+        # los valores enviados y sus errores.
+        oportunidad.refresh_from_db()
+
+    elif puede_editar:
+        formulario = SeguimientoOportunidadForm(
+            instance=oportunidad,
+        )
+
     contexto = {
         "oportunidad": oportunidad,
         "hoy": timezone.localdate(),
-        "puede_editar": administrador.has_change_permission(
-            request,
-            oportunidad,
-        ),
+        "puede_editar": puede_editar,
+        "formulario": formulario,
         "esta_cerrada": oportunidad.estado in (
             Oportunidad.Estado.GANADA,
             Oportunidad.Estado.PERDIDA,

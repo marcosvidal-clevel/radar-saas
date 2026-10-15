@@ -22,7 +22,8 @@
       line-height: 1.5;
     }
     a { color: var(--azul); }
-    a:focus-visible {
+    a:focus-visible, button:focus-visible,
+    input:focus-visible, select:focus-visible, textarea:focus-visible {
       outline: 3px solid #d79416;
       outline-offset: 4px;
     }
@@ -80,6 +81,9 @@
       text-decoration: none;
       padding: 11px 18px;
       border-radius: 8px;
+      border: 1px solid var(--azul);
+      font: inherit;
+      cursor: pointer;
     }
     .rejilla {
       display: grid;
@@ -115,10 +119,47 @@
       border-left-color: #a32635;
       color: #8f2230;
     }
-    .hoy {
+    .hoy, .confirmacion {
       background: #eaf7f1;
       border-left-color: #19836a;
       color: #16634f;
+    }
+    .formulario {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .campo { min-width: 0; }
+    .campo label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+    .campo input, .campo select, .campo textarea {
+      width: 100%;
+      padding: 11px;
+      border: 1px solid #aab8c4;
+      border-radius: 8px;
+      background: white;
+      color: var(--texto);
+      font: inherit;
+    }
+    .campo textarea { resize: vertical; }
+    .ayuda {
+      margin: 6px 0 0;
+      color: var(--secundario);
+      font-size: 13px;
+    }
+    .errorlist {
+      margin: 8px 0;
+      padding-left: 20px;
+      color: #a32635;
+      font-size: 14px;
+    }
+    .introduccion {
+      margin: -6px 0 20px;
+      color: var(--secundario);
+      font-size: 14px;
     }
     footer {
       color: var(--secundario);
@@ -128,7 +169,7 @@
     @media (max-width: 700px) {
       main { padding: 24px 14px; }
       .barra { padding: 16px; }
-      .rejilla { grid-template-columns: 1fr; }
+      .rejilla, .formulario { grid-template-columns: 1fr; }
       .tarjeta { padding: 20px; }
       h1 { font-size: 25px; }
     }
@@ -148,6 +189,16 @@
     <a class="volver" href="{% url 'panel_comercial' %}">
       ← Volver al panel
     </a>
+
+    {% if messages %}
+      <div aria-live="polite">
+        {% for mensaje in messages %}
+          <div class="aviso confirmacion" role="status">
+            {{ mensaje }}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
 
     <div class="cabecera">
       <div>
@@ -182,19 +233,14 @@
         <dl>
           <dt>Organización</dt>
           <dd>{{ oportunidad.organizacion.nombre }}</dd>
-
           <dt>Empresa</dt>
           <dd>{{ oportunidad.empresa.nombre|default:"Empresa por identificar" }}</dd>
-
           <dt>Origen</dt>
           <dd>{{ oportunidad.get_origen_display }}</dd>
-
           <dt>Canal</dt>
           <dd>{{ oportunidad.get_canal_display }}</dd>
-
           <dt>Estado</dt>
           <dd>{{ oportunidad.get_estado_display }}</dd>
-
           <dt>Responsable</dt>
           <dd>{{ oportunidad.responsable|default:"Sin asignar" }}</dd>
         </dl>
@@ -204,9 +250,7 @@
         <h2>Próximo seguimiento</h2>
 
         {% if esta_cerrada %}
-          <div class="aviso">
-            Esta oportunidad está cerrada.
-          </div>
+          <div class="aviso">Esta oportunidad está cerrada.</div>
         {% elif oportunidad.fecha_proxima_accion %}
           {% if oportunidad.fecha_proxima_accion < hoy %}
             <div class="aviso vencido">Seguimiento vencido</div>
@@ -226,7 +270,6 @@
           <dd>
             {{ oportunidad.fecha_proxima_accion|date:"d/m/Y"|default:"Sin fecha" }}
           </dd>
-
           <dt>Próxima acción</dt>
           <dd class="texto">
             {{ oportunidad.proxima_accion|default:"Acción por definir"|linebreaksbr }}
@@ -234,11 +277,62 @@
         </dl>
       </section>
 
+      {% if puede_editar %}
+        <section class="tarjeta ancho-completo" id="actualizar-seguimiento">
+          <h2>Actualizar seguimiento</h2>
+          <p class="introduccion">
+            Actualiza el avance comercial y programa el próximo paso.
+            Para marcar Perdida o Descartada, indica el motivo de cierre.
+          </p>
+
+          <form method="post"
+                action="{% url 'detalle_oportunidad' oportunidad.pk %}#actualizar-seguimiento"
+                class="formulario">
+            {% csrf_token %}
+
+            {% if formulario.errors %}
+              <div class="aviso vencido ancho-completo" role="alert">
+                Revisa los campos indicados. Los cambios no se guardaron.
+                {{ formulario.non_field_errors }}
+              </div>
+            {% endif %}
+
+            <div class="campo">
+              {{ formulario.estado.label_tag }}
+              {{ formulario.estado }}
+              {{ formulario.estado.errors }}
+            </div>
+
+            <div class="campo">
+              {{ formulario.fecha_proxima_accion.label_tag }}
+              {{ formulario.fecha_proxima_accion }}
+              {{ formulario.fecha_proxima_accion.errors }}
+            </div>
+
+            <div class="campo ancho-completo">
+              {{ formulario.proxima_accion.label_tag }}
+              {{ formulario.proxima_accion }}
+              {{ formulario.proxima_accion.errors }}
+              <p class="ayuda">{{ formulario.proxima_accion.help_text }}</p>
+            </div>
+
+            <div class="campo ancho-completo">
+              {{ formulario.motivo_cierre.label_tag }}
+              {{ formulario.motivo_cierre }}
+              {{ formulario.motivo_cierre.errors }}
+              <p class="ayuda">{{ formulario.motivo_cierre.help_text }}</p>
+            </div>
+
+            <div class="ancho-completo">
+              <button class="boton" type="submit">Guardar seguimiento</button>
+            </div>
+          </form>
+        </section>
+      {% endif %}
+
       <section class="tarjeta ancho-completo">
         <h2>Necesidad comercial</h2>
-        <div class="texto">
-          {{ oportunidad.necesidad|linebreaks }}
-        </div>
+        <div class="texto">{{ oportunidad.necesidad|linebreaks }}</div>
       </section>
 
       <section class="tarjeta">
@@ -246,10 +340,8 @@
         <dl>
           <dt>Nombre</dt>
           <dd>{{ oportunidad.nombre_consultante|default:"Sin registrar" }}</dd>
-
           <dt>Correo electrónico</dt>
           <dd>{{ oportunidad.email_consultante|default:"Sin registrar" }}</dd>
-
           <dt>Teléfono</dt>
           <dd>{{ oportunidad.telefono_consultante|default:"Sin registrar" }}</dd>
         </dl>
@@ -260,10 +352,8 @@
         <dl>
           <dt>Contacto</dt>
           <dd>{{ oportunidad.contacto.nombre|default:"Sin contacto asociado" }}</dd>
-
           <dt>Cargo del contacto</dt>
           <dd>{{ oportunidad.contacto.cargo|default:"Sin registrar" }}</dd>
-
           <dt>Señal</dt>
           <dd>{{ oportunidad.senal.titulo|default:"Sin señal asociada" }}</dd>
         </dl>
@@ -272,9 +362,7 @@
       {% if oportunidad.motivo_cierre %}
         <section class="tarjeta ancho-completo">
           <h2>Motivo de cierre</h2>
-          <div class="texto">
-            {{ oportunidad.motivo_cierre|linebreaks }}
-          </div>
+          <div class="texto">{{ oportunidad.motivo_cierre|linebreaks }}</div>
         </section>
       {% endif %}
 
