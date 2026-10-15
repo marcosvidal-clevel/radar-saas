@@ -90,3 +90,16 @@ class SeguridadPostulacionesTests(TestCase):
 
         self.assertIn(self.vacante_a, campo.queryset)
         self.assertNotIn(self.vacante_b, campo.queryset)
+
+    def test_selector_candidatos_excluye_organizacion_ajena(self):
+        solicitud = RequestFactory().get("/admin/")
+        solicitud.user = self.usuario
+
+        administrador = admin.site._registry[Postulacion]
+        campo = administrador.formfield_for_foreignkey(
+            Postulacion._meta.get_field("candidato"),
+            solicitud,
+        )
+
+        self.assertIn(self.candidato_a, campo.queryset)
+        self.assertNotIn(self.candidato_b, campo.queryset)

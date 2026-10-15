@@ -269,13 +269,36 @@ class PostulacionAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
         campo = super().formfield_for_foreignkey(
             db_field, request, **kwargs
         )
-        if db_field.name == "vacante" and not request.user.is_superuser:
-            organizaciones = self.organizaciones_permitidas(
-                request, self.ROLES_GESTION
+
+        if db_field.name == "documento_cv":
+            campo.queryset = DocumentoCandidato.objects.filter(
+                tipo=DocumentoCandidato.Tipo.CURRICULUM
             )
+
+        if request.user.is_superuser:
+            return campo
+
+        organizaciones = self.organizaciones_permitidas(
+            request,
+            self.ROLES_GESTION,
+        )
+
+        if db_field.name == "vacante":
             campo.queryset = Vacante.objects.filter(
                 organizacion_id__in=organizaciones
             )
+
+        elif db_field.name == "candidato":
+            campo.queryset = Candidato.objects.filter(
+                organizacion_id__in=organizaciones
+            )
+
+        elif db_field.name == "documento_cv":
+            campo.queryset = DocumentoCandidato.objects.filter(
+                candidato__organizacion_id__in=organizaciones,
+                tipo=DocumentoCandidato.Tipo.CURRICULUM,
+            )
+
         return campo
 
     list_display = (
