@@ -1,6 +1,6 @@
-
 from django.contrib import admin
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group, Permission
 from django.test import RequestFactory, TestCase
 
 from core.models import Membresia, Organizacion
@@ -37,6 +37,11 @@ class SeguridadCandidatosTests(TestCase):
             password="clave-prueba",
             is_staff=True,
         )
+        cls.usuario_comercial = Usuario.objects.create_user(
+            username="comercial_a",
+            password="clave-prueba",
+            is_staff=True,
+        )
         cls.superusuario = Usuario.objects.create_superuser(
             username="superusuario",
             password="clave-prueba",
@@ -47,6 +52,7 @@ class SeguridadCandidatosTests(TestCase):
             (cls.administrador, Membresia.Rol.ADMINISTRADOR),
             (cls.supervisor, Membresia.Rol.SUPERVISOR),
             (cls.colaborador, Membresia.Rol.COLABORADOR),
+            (cls.usuario_comercial, Membresia.Rol.ADMINISTRADOR),
         ):
             Membresia.objects.create(
                 usuario=usuario,
@@ -54,6 +60,32 @@ class SeguridadCandidatosTests(TestCase):
                 rol=rol,
                 activa=True,
             )
+
+        grupo_talento = Group.objects.create(
+            name="RADAR — Acceso talento"
+        )
+        permisos_talento = Permission.objects.filter(
+            content_type__app_label="talento",
+            codename__in=(
+                "add_candidato",
+                "change_candidato",
+                "delete_candidato",
+                "view_candidato",
+            ),
+        )
+        grupo_talento.permissions.add(*permisos_talento)
+
+        for usuario in (
+            cls.administrador,
+            cls.supervisor,
+            cls.colaborador,
+        ):
+            usuario.groups.add(grupo_talento)
+
+        grupo_comercial = Group.objects.create(
+            name="RADAR — Acceso comercial"
+        )
+        cls.usuario_comercial.groups.add(grupo_comercial)
 
         cls.candidato_a = Candidato.objects.create(
             organizacion=cls.organizacion_a,
@@ -74,56 +106,84 @@ class SeguridadCandidatosTests(TestCase):
         return request
 
     def test_administrador_solo_ve_su_organizacion(self):
-        request = self.solicitud(self.administrador)
-        candidatos = self.administracion.get_queryset(request)
-
+        candidatos = self.administracion.get_queryset(
+            self.solicitud(self.administrador)
+        )
         self.assertIn(self.candidato_a, candidatos)
         self.assertNotIn(self.candidato_b, candidatos)
 
     def test_supervisor_solo_ve_su_organizacion(self):
-        request = self.solicitud(self.supervisor)
-        candidatos = self.administracion.get_queryset(request)
-
+        candidatos = self.administracion.get_queryset(
+            self.solicitud(self.supervisor)
+        )
         self.assertIn(self.candidato_a, candidatos)
         self.assertNotIn(self.candidato_b, candidatos)
 
     def test_colaborador_solo_ve_su_organizacion(self):
-        request = self.solicitud(self.colaborador)
-        candidatos = self.administracion.get_queryset(request)
-
+        candidatos = self.administracion.get_queryset(
+            self.solicitud(self.colaborador)
+        )
         self.assertIn(self.candidato_a, candidatos)
         self.assertNotIn(self.candidato_b, candidatos)
 
-    def test_administrador_no_modifica_candidato_ajeno(self):
-        request = self.solicitud(self.administrador)
+    def test_administrador_puede_modificar_su_candidato(self):
+        self.assertTrue(
+            self.administracion.has_change_permission(
+                self.solicitud(self.administrador),
+                self.candidato_a,
+            )
+        )
 
+    def test_administrador_no_modifica_candidato_ajeno(self):
         self.assertFalse(
             self.administracion.has_change_permission(
-                request,
+                self.solicitud(self.administrador),
                 self.candidato_b,
+            )
+        )
+
+    def test_supervisor_puede_modificar_su_candidato(self):
+        self.assertTrue(
+            self.administracion.has_change_permission(
+                self.solicitud(self.supervisor),
+                self.candidato_a,
             )
         )
 
     def test_supervisor_no_elimina_candidato_ajeno(self):
-        request = self.solicitud(self.supervisor)
-
         self.assertFalse(
             self.administracion.has_delete_permission(
-                request,
+                self.solicitud(self.supervisor),
                 self.candidato_b,
             )
         )
 
-    def test_colaborador_no_puede_agregar_candidatos(self):
-        request = self.solicitud(self.colaborador)
+    def test_colaborador_puede_consultar_su_candidato(self):
+        self.assertTrue(
+            self.administracion.has_view_permission(
+                self.solicitud(self.colaborador),
+                self.candidato_a,
+            )
+        )
 
+    def test_colaborador_no_puede_agregar_candidatos(self):
         self.assertFalse(
-            self.administracion.has_add_permission(request)
+            self.administracion.has_add_permission(
+                self.solicitud(self.colaborador)
+            )
+        )
+
+    def test_usuario_comercial_no_accede_a_talento(self):
+        self.assertFalse(
+            self.administracion.has_view_permission(
+                self.solicitud(self.usuario_comercial),
+                self.candidato_a,
+            )
         )
 
     def test_superusuario_ve_ambas_organizaciones(self):
-        request = self.solicitud(self.superusuario)
-        candidatos = self.administracion.get_queryset(request)
-
+        candidatos = self.administracion.get_queryset(
+            self.solicitud(self.superusuario)
+        )
         self.assertIn(self.candidato_a, candidatos)
         self.assertIn(self.candidato_b, candidatos)
