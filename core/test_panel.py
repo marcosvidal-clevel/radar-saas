@@ -6,7 +6,13 @@ from django.contrib.auth.models import Permission
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from .models import Organizacion, Membresia, Oportunidad
+from .models import (
+    Organizacion,
+    Membresia,
+    Sector,
+    EmpresaProspectada,
+    Oportunidad,
+)
 
 
 @override_settings(ALLOWED_HOSTS=["testserver"])
@@ -24,7 +30,6 @@ class PanelComercialTests(TestCase):
         cls.usuario.user_permissions.add(
             *Permission.objects.filter(content_type__app_label="core")
         )
-
         cls.sin_permisos = Usuario.objects.create_user(
             username="sin_permisos_panel",
             is_staff=True,
@@ -215,7 +220,6 @@ class PanelComercialTests(TestCase):
         respuesta = self.abrir_panel({
             "canal": Oportunidad.Canal.WHATSAPP,
         })
-
         self.assertEqual(respuesta.status_code, 200)
         self.assertEqual(respuesta.context["total_activas"], 1)
         self.assertEqual(respuesta.context["total_calientes"], 1)
@@ -259,7 +263,6 @@ class PanelComercialTests(TestCase):
         respuesta = self.abrir_panel({
             "responsable": str(self.membresia.pk),
         })
-
         self.assertEqual(respuesta.context["total_activas"], 1)
         self.assertContains(respuesta, self.para_hoy.titulo)
         self.assertNotContains(respuesta, self.vencida.titulo)
@@ -272,7 +275,6 @@ class PanelComercialTests(TestCase):
         respuesta = self.abrir_panel({
             "responsable": "sin_asignar",
         })
-
         self.assertEqual(respuesta.context["total_activas"], 3)
         self.assertEqual(respuesta.context["total_para_hoy"], 0)
         self.assertEqual(respuesta.context["total_vencidas"], 1)
@@ -288,7 +290,6 @@ class PanelComercialTests(TestCase):
             "canal": "canal_inexistente",
             "responsable": "no_es_un_identificador",
         })
-
         self.assertEqual(respuesta.status_code, 200)
         self.assertEqual(respuesta.context["total_activas"], 4)
         self.assertEqual(respuesta.context["filtro_estado"], "")
@@ -313,7 +314,6 @@ class PanelComercialTests(TestCase):
         respuesta = self.abrir_panel({
             "responsable": str(membresia_ajena.pk),
         })
-
         self.assertEqual(respuesta.status_code, 200)
         self.assertEqual(respuesta.context["total_activas"], 4)
         opciones = {
@@ -341,3 +341,111 @@ class PanelComercialTests(TestCase):
         self.assertContains(respuesta, self.para_hoy.titulo)
         self.assertNotContains(respuesta, self.vencida.titulo)
         self.assertNotContains(respuesta, self.ajena.titulo)
+
+    def test_busqueda_titulo_parcial_sin_distinguir_mayusculas(self):
+        respuesta = self.abrir_panel({"q": "  ASIGNADA  "})
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.context["busqueda"], "ASIGNADA")
+        self.assertTrue(respuesta.context["hay_filtros"])
+        self.assertEqual(respuesta.context["total_activas"], 1)
+        self.assertEqual(respuesta.context["total_para_hoy"], 1)
+        self.assertContains(respuesta, self.para_hoy.titulo)
+        self.assertNotContains(respuesta, self.vencida.titulo)
+
+    def test_busqueda_por_empresa_y_consultante(self):
+        sector = Sector.objects.create(
+            organizacion=self.organizacion,
+            nombre="Sector de prueba",
+        )
+        empresa = EmpresaProspectada.objects.create(
+            organizacion=self.organizacion,
+            sector=sector,
+            nombre="Empresa Horizonte",
+        )
+        self.para_hoy.empresa = empresa
+        self.para_hoy.nombre_consultante = "Teresa Molina"
+        self.para_hoy.save()
+
+        for termino in ("horizonte", "teresa"):
+            with self.subTest(termino=termino):
+                respuesta = self.abrir_panel({"q": termino})
+                self.assertEqual(respuesta.status_code, 200)
+                self.assertEqual(
+                    respuesta.context["total_activas"], 1
+                )
+                ids = [
+                    oportunidad.pk
+                    for oportunidad in respuesta.context["calientes"]
+                ]
+                self.assertEqual(ids, [self.para_hoy.pk])
+
+    def test_busqueda_se_combina_con_filtros(self):
+        filtros = {
+            "q": "asignada",
+            "estado": Oportunidad.Estado.NUEVA,
+            "canal": Oportunidad.Canal.WHATSAPP,
+            "responsable": str(self.membresia.pk),
+        }
+        respuesta = self.abrir_panel(filtros)
+        self.assertEqual(respuesta.context["total_activas"], 1)
+
+        filtros["canal"] = Oportunidad.Canal.EMAIL
+        respuesta = self.abrir_panel(filtros)
+        for indicador in (
+            "total_activas",
+            "total_calientes",
+            "total_vencidas",
+            "total_para_hoy",
+            "total_sin_fecha",
+        ):
+            self.assertEqual(respuesta.context[indicador], 0)
+
+        self.assertFalse(respuesta.context["calientes"])
+        self.assertFalse(respuesta.context["seguimientos"])
+        self.assertFalse(respuesta.context["sin_fecha"])
+
+    def test_busqueda_no_muestra_ajenas_ni_cerradas(self):
+        for termino in ("privada", "Cerrada:"):
+            with self.subTest(termino=termino):
+                respuesta = self.abrir_panel({"q": termino})
+                self.assertEqual(
+                    respuesta.context["total_activas"], 0
+                )
+                self.assertFalse(respuesta.context["calientes"])
+                self.assertFalse(respuesta.context["seguimientos"])
+                self.assertFalse(respuesta.context["sin_fecha"])
+                self.assertNotContains(respuesta, self.ajena.titulo)
+
+        self.membresia.rol = Membresia.Rol.COLABORADOR
+        self.membresia.save()
+
+        respuesta = self.abrir_panel({"q": "vencida"})
+        self.assertEqual(respuesta.context["total_activas"], 0)
+        self.assertNotContains(respuesta, self.vencida.titulo)
+
+    def test_busqueda_vacia_y_limpiar_restauran_resultados(self):
+        respuesta = self.abrir_panel({"q": "zzzinexistente"})
+        self.assertEqual(respuesta.context["total_activas"], 0)
+
+        for filtros in ({"q": "   "}, {}):
+            with self.subTest(filtros=filtros):
+                respuesta = self.abrir_panel(filtros)
+                self.assertEqual(respuesta.context["busqueda"], "")
+                self.assertFalse(respuesta.context["hay_filtros"])
+                self.assertEqual(
+                    respuesta.context["total_activas"], 4
+                )
+
+    def test_busqueda_escapa_html_y_limita_longitud(self):
+        texto = '<script>alert("prueba")</script>'
+        respuesta = self.abrir_panel({"q": texto})
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertNotContains(respuesta, texto)
+        self.assertContains(respuesta, "&lt;script&gt;")
+        self.assertEqual(respuesta.context["total_activas"], 0)
+
+        respuesta = self.abrir_panel({"q": "x" * 250})
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(len(respuesta.context["busqueda"]), 200)

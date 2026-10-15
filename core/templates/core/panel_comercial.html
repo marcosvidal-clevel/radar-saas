@@ -22,7 +22,8 @@
       line-height: 1.5;
     }
     a { color: var(--azul); }
-    a:focus-visible, button:focus-visible, select:focus-visible {
+    a:focus-visible, button:focus-visible,
+    select:focus-visible, input:focus-visible {
       outline: 3px solid #d79416;
       outline-offset: 4px;
     }
@@ -77,17 +78,18 @@
     .filtros h2 { font-size: 18px; }
     .formulario-filtros {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 16px;
       align-items: end;
       margin-top: 16px;
     }
+    .campo-busqueda { grid-column: 1 / -1; }
     .campo label {
       display: block;
       font-size: 14px;
       margin-bottom: 6px;
     }
-    .campo select {
+    .campo select, .campo input {
       width: 100%;
       min-height: 46px;
       padding: 10px;
@@ -97,7 +99,17 @@
       color: var(--texto);
       font: inherit;
     }
-    .acciones-filtros { display: flex; gap: 8px; flex-wrap: wrap; }
+    .ayuda {
+      margin: 6px 0 0;
+      color: var(--secundario);
+      font-size: 13px;
+    }
+    .acciones-filtros {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      grid-column: 1 / -1;
+    }
     .aviso-filtros {
       color: var(--secundario);
       font-size: 14px;
@@ -201,9 +213,20 @@
     </div>
 
     <section class="filtros" aria-labelledby="titulo-filtros">
-      <h2 id="titulo-filtros">Filtrar oportunidades activas</h2>
+      <h2 id="titulo-filtros">Buscar y filtrar oportunidades activas</h2>
       <form method="get" action="{% url 'panel_comercial' %}"
             class="formulario-filtros">
+        <div class="campo campo-busqueda">
+          <label for="busqueda">Buscar oportunidad</label>
+          <input type="search" id="busqueda" name="q"
+                 value="{{ busqueda }}" maxlength="200"
+                 placeholder="Título, empresa o nombre del consultante"
+                 aria-describedby="ayuda-busqueda">
+          <p class="ayuda" id="ayuda-busqueda">
+            Puedes escribir parte del nombre y combinar la búsqueda con los filtros.
+          </p>
+        </div>
+
         <div class="campo">
           <label for="filtro-estado">Estado</label>
           <select id="filtro-estado" name="estado">
@@ -248,7 +271,7 @@
         </div>
 
         <div class="acciones-filtros">
-          <button class="boton" type="submit">Aplicar filtros</button>
+          <button class="boton" type="submit">Buscar y aplicar filtros</button>
           <a class="boton boton-secundario"
              href="{% url 'panel_comercial' %}">Limpiar</a>
         </div>
@@ -256,7 +279,7 @@
 
       <p class="aviso-filtros">
         {% if hay_filtros %}
-          Filtros aplicados: los indicadores y las tablas muestran los resultados seleccionados.
+          Búsqueda o filtros aplicados: los indicadores y las tablas muestran los resultados seleccionados.
         {% else %}
           Los indicadores y las tablas muestran todas las oportunidades activas que puedes consultar.
         {% endif %}
@@ -423,7 +446,7 @@
 
     <footer>
       Los indicadores incluyen únicamente las oportunidades que puedes consultar
-      y respetan los filtros seleccionados.
+      y respetan la búsqueda y los filtros seleccionados.
       Las ganadas, perdidas y descartadas quedan fuera de las listas activas.
     </footer>
   </main>

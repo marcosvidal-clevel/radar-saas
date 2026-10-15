@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.contrib.admin.views.decorators import staff_member_required
 from django.core.exceptions import PermissionDenied
+from django.db.models import Q
 from django.shortcuts import render
 from django.utils import timezone
 
@@ -58,6 +59,7 @@ def panel_comercial(request):
         for membresia in membresias
     ]
 
+    busqueda = request.GET.get("q", "").strip()[:200]
     estado = request.GET.get("estado", "").strip()
     canal = request.GET.get("canal", "").strip()
     responsable = request.GET.get("responsable", "").strip()
@@ -80,6 +82,13 @@ def panel_comercial(request):
 
     if responsable not in responsables_validos | {"sin_asignar"}:
         responsable = ""
+
+    if busqueda:
+        activas = activas.filter(
+            Q(titulo__icontains=busqueda)
+            | Q(empresa__nombre__icontains=busqueda)
+            | Q(nombre_consultante__icontains=busqueda)
+        )
 
     if estado:
         activas = activas.filter(estado=estado)
@@ -117,10 +126,13 @@ def panel_comercial(request):
         "estados_disponibles": estados_disponibles,
         "canales_disponibles": canales_disponibles,
         "responsables_disponibles": responsables_disponibles,
+        "busqueda": busqueda,
         "filtro_estado": estado,
         "filtro_canal": canal,
         "filtro_responsable": responsable,
-        "hay_filtros": bool(estado or canal or responsable),
+        "hay_filtros": bool(
+            busqueda or estado or canal or responsable
+        ),
     }
 
     return render(
