@@ -1,3 +1,4 @@
+
 from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
@@ -64,6 +65,7 @@ class SeguridadCandidatosTests(TestCase):
         grupo_talento = Group.objects.create(
             name="RADAR — Acceso talento"
         )
+
         permisos_talento = Permission.objects.filter(
             content_type__app_label="talento",
             codename__in=(
@@ -73,6 +75,7 @@ class SeguridadCandidatosTests(TestCase):
                 "view_candidato",
             ),
         )
+
         grupo_talento.permissions.add(*permisos_talento)
 
         for usuario in (
@@ -101,7 +104,9 @@ class SeguridadCandidatosTests(TestCase):
         self.administracion = admin.site._registry[Candidato]
 
     def solicitud(self, usuario):
-        request = self.factory.get("/admin/talento/candidato/")
+        request = self.factory.get(
+            "/admin/talento/candidato/"
+        )
         request.user = usuario
         return request
 
@@ -109,6 +114,7 @@ class SeguridadCandidatosTests(TestCase):
         candidatos = self.administracion.get_queryset(
             self.solicitud(self.administrador)
         )
+
         self.assertIn(self.candidato_a, candidatos)
         self.assertNotIn(self.candidato_b, candidatos)
 
@@ -116,6 +122,7 @@ class SeguridadCandidatosTests(TestCase):
         candidatos = self.administracion.get_queryset(
             self.solicitud(self.supervisor)
         )
+
         self.assertIn(self.candidato_a, candidatos)
         self.assertNotIn(self.candidato_b, candidatos)
 
@@ -123,6 +130,7 @@ class SeguridadCandidatosTests(TestCase):
         candidatos = self.administracion.get_queryset(
             self.solicitud(self.colaborador)
         )
+
         self.assertIn(self.candidato_a, candidatos)
         self.assertNotIn(self.candidato_b, candidatos)
 
@@ -185,5 +193,42 @@ class SeguridadCandidatosTests(TestCase):
         candidatos = self.administracion.get_queryset(
             self.solicitud(self.superusuario)
         )
+
         self.assertIn(self.candidato_a, candidatos)
         self.assertIn(self.candidato_b, candidatos)
+
+    def test_comercial_no_ingresa_al_listado_talento(self):
+        self.client.force_login(self.usuario_comercial)
+
+        respuesta = self.client.get(
+            "/admin/talento/candidato/"
+        )
+
+        self.assertEqual(respuesta.status_code, 403)
+
+    def test_administrador_ingresa_al_listado_talento(self):
+        self.client.force_login(self.administrador)
+
+        respuesta = self.client.get(
+            "/admin/talento/candidato/"
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+
+    def test_administrador_no_accede_a_candidato_ajeno(self):
+        self.client.force_login(self.administrador)
+
+        respuesta = self.client.get(
+            f"/admin/talento/candidato/{self.candidato_b.pk}/change/"
+        )
+
+        self.assertEqual(respuesta.status_code, 302)
+
+    def test_administrador_accede_a_su_candidato(self):
+        self.client.force_login(self.administrador)
+
+        respuesta = self.client.get(
+            f"/admin/talento/candidato/{self.candidato_a.pk}/change/"
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
