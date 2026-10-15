@@ -1,6 +1,7 @@
-
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied
+from django.utils.html import format_html
+from django.urls import reverse
 
 from core.admin_permisos import OrganizacionAdminMixin
 from core.models import Membresia
@@ -111,6 +112,7 @@ class DocumentoCandidatoAdmin(
         "tipo",
         "vigente",
         "es_cv_principal",
+        "enlace_descarga",
         "creado_en",
     )
 
@@ -129,12 +131,41 @@ class DocumentoCandidatoAdmin(
     readonly_fields = (
         "creado_en",
         "actualizado_en",
+        "enlace_descarga",
     )
 
     list_select_related = (
         "candidato",
         "candidato__organizacion",
     )
+
+    fields = (
+        "candidato",
+        "tipo",
+        "nombre",
+        "archivo",
+        "enlace_descarga",
+        "es_cv_principal",
+        "vigente",
+        "observaciones",
+        "creado_en",
+        "actualizado_en",
+    )
+
+    @admin.display(description="Descargar documento")
+    def enlace_descarga(self, obj):
+        if not obj or not obj.pk or not obj.archivo:
+            return "Sin archivo disponible"
+
+        url = reverse(
+            "descargar_documento_candidato",
+            args=[obj.pk],
+        )
+
+        return format_html(
+            '<a href="{}">Descargar archivo</a>',
+            url,
+        )
 
     def organizacion_objeto(self, obj):
         return obj.candidato.organizacion_id
