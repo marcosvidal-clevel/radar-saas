@@ -154,6 +154,6 @@ class OportunidadAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
         "responsable",
     )
 
-    @admin.display(boolean=True, description="Caliente")
+    @admin.display(boolean=True, description="Consulta entrante")
     def caliente(self, obj):
         return obj.es_caliente

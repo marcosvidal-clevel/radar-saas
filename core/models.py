@@ -239,7 +239,7 @@ class Senal(models.Model):
         return self.titulo
 class Oportunidad(models.Model):
     class Origen(models.TextChoices):
-        CONSULTA_ENTRANTE = "consulta_entrante", "Consulta entrante (caliente)"
+        CONSULTA_ENTRANTE = "consulta_entrante", "Consulta entrante"
         PROSPECCION = "prospeccion", "Prospección"
 
     class Canal(models.TextChoices):

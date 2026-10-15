@@ -290,7 +290,7 @@
         <span class="numero">{{ total_activas }}</span>
       </div>
       <div class="indicador caliente">
-        <span class="etiqueta">Consultas calientes activas</span>
+        <span class="etiqueta">Consultas entrantes activas</span>
         <span class="numero">{{ total_calientes }}</span>
       </div>
       <div class="indicador vencida">
@@ -390,13 +390,13 @@
 
     <section class="seccion">
       <div class="titulo-seccion">
-        <h2>Consultas calientes</h2>
+        <h2>Consultas entrantes</h2>
         <p>Consultas comerciales entrantes activas. Hasta 20 registros, del más reciente al más antiguo.</p>
       </div>
       {% if calientes %}
         <div class="tabla">
           <table>
-            <caption class="vacio">Oportunidades calientes activas</caption>
+            <caption class="vacio">Consultas entrantes activas</caption>
             <thead>
               <tr>
                 <th scope="col">Oportunidad</th>
@@ -429,7 +429,7 @@
           </table>
         </div>
       {% else %}
-        <p class="vacio">No hay consultas calientes activas para esta selección.</p>
+        <p class="vacio">No hay consultas entrantes activas para esta selección.</p>
       {% endif %}
     </section>
 
