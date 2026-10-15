@@ -1,9 +1,11 @@
+from urllib.parse import urlencode
+
 from django.contrib import admin
 from django.contrib.admin.views.decorators import staff_member_required
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.db.models import Q
-from django.shortcuts import render
+from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 
 from .models import Membresia, Oportunidad
@@ -18,7 +20,6 @@ def panel_comercial(request):
             "No tienes acceso al panel comercial."
         )
 
-    # Primero se aplican los permisos y el aislamiento.
     oportunidades = administrador.get_queryset(request).select_related(
         "organizacion",
         "empresa",
@@ -40,7 +41,6 @@ def panel_comercial(request):
     ]
     canales_disponibles = list(Oportunidad.Canal.choices)
 
-    # Solo ofrece responsables de oportunidades que el usuario puede ver.
     membresias = Membresia.objects.filter(
         pk__in=activas.values("responsable_id")
     ).select_related(
@@ -111,7 +111,6 @@ def panel_comercial(request):
     para_hoy = activas.filter(fecha_proxima_accion=hoy)
     sin_fecha = activas.filter(fecha_proxima_accion__isnull=True)
 
-    # La lista general incluye también seguimientos futuros.
     paginador = Paginator(
         activas.order_by("-creada_en", "-pk"),
         20,
@@ -120,7 +119,6 @@ def panel_comercial(request):
         request.GET.get("pagina")
     )
 
-    # Los enlaces de página conservarán los filtros validados.
     parametros = {}
     if busqueda:
         parametros["q"] = busqueda
@@ -130,8 +128,6 @@ def panel_comercial(request):
         parametros["canal"] = canal
     if responsable:
         parametros["responsable"] = responsable
-
-    from urllib.parse import urlencode
 
     contexto = {
         "hoy": hoy,
@@ -163,5 +159,51 @@ def panel_comercial(request):
     return render(
         request,
         "core/panel_comercial.html",
+        contexto,
+    )
+
+
+@staff_member_required(login_url="admin:login")
+def detalle_oportunidad(request, pk):
+    administrador = admin.site._registry[Oportunidad]
+
+    if not administrador.has_view_permission(request):
+        raise PermissionDenied(
+            "No tienes acceso a las oportunidades comerciales."
+        )
+
+    # Busca únicamente entre los registros autorizados.
+    oportunidades = administrador.get_queryset(request).select_related(
+        "organizacion",
+        "empresa",
+        "contacto",
+        "senal",
+        "responsable__usuario",
+        "responsable__organizacion",
+    )
+    oportunidad = get_object_or_404(oportunidades, pk=pk)
+
+    if not administrador.has_view_permission(request, oportunidad):
+        raise PermissionDenied(
+            "No tienes acceso a esta oportunidad."
+        )
+
+    contexto = {
+        "oportunidad": oportunidad,
+        "hoy": timezone.localdate(),
+        "puede_editar": administrador.has_change_permission(
+            request,
+            oportunidad,
+        ),
+        "esta_cerrada": oportunidad.estado in (
+            Oportunidad.Estado.GANADA,
+            Oportunidad.Estado.PERDIDA,
+            Oportunidad.Estado.DESCARTADA,
+        ),
+    }
+
+    return render(
+        request,
+        "core/detalle_oportunidad.html",
         contexto,
     )

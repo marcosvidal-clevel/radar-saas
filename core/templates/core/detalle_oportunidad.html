@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="es-CL">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ oportunidad.titulo }} | RADAR</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --fondo: #f3f5f8;
+      --texto: #182b3a;
+      --secundario: #526474;
+      --borde: #dce3ea;
+      --azul: #164b63;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--fondo);
+      color: var(--texto);
+      font-family: Arial, sans-serif;
+      line-height: 1.5;
+    }
+    a { color: var(--azul); }
+    a:focus-visible {
+      outline: 3px solid #d79416;
+      outline-offset: 4px;
+    }
+    .barra {
+      background: #142f40;
+      color: white;
+      padding: 18px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+    .marca {
+      font-size: 24px;
+      letter-spacing: 3px;
+      font-weight: bold;
+    }
+    .barra a { color: white; }
+    .usuario { font-size: 14px; }
+    main {
+      max-width: 1100px;
+      margin: auto;
+      padding: 32px 24px;
+    }
+    .volver { display: inline-block; margin-bottom: 20px; }
+    .cabecera {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 20px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+    }
+    h1 {
+      margin: 8px 0;
+      font-size: 29px;
+      overflow-wrap: anywhere;
+    }
+    h2 { margin: 0 0 18px; font-size: 21px; }
+    .subtitulo { margin: 0; color: var(--secundario); }
+    .etiquetas { display: flex; flex-wrap: wrap; gap: 8px; }
+    .etiqueta {
+      display: inline-block;
+      padding: 5px 10px;
+      background: #e6eef4;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+    .caliente { background: #fff0e6; color: #873913; }
+    .boton {
+      display: inline-block;
+      background: var(--azul);
+      color: white;
+      text-decoration: none;
+      padding: 11px 18px;
+      border-radius: 8px;
+    }
+    .rejilla {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 20px;
+    }
+    .tarjeta {
+      background: white;
+      border: 1px solid var(--borde);
+      border-radius: 12px;
+      padding: 24px;
+      min-width: 0;
+    }
+    .ancho-completo { grid-column: 1 / -1; }
+    dl { margin: 0; }
+    dt { color: var(--secundario); font-size: 14px; }
+    dd {
+      margin: 4px 0 18px;
+      overflow-wrap: anywhere;
+    }
+    dd:last-child { margin-bottom: 0; }
+    .texto { overflow-wrap: anywhere; }
+    .texto p { margin-top: 0; }
+    .texto p:last-child { margin-bottom: 0; }
+    .aviso {
+      background: #edf3f7;
+      border-left: 4px solid var(--azul);
+      padding: 14px 16px;
+      margin-bottom: 18px;
+    }
+    .vencido {
+      background: #fff0f1;
+      border-left-color: #a32635;
+      color: #8f2230;
+    }
+    .hoy {
+      background: #eaf7f1;
+      border-left-color: #19836a;
+      color: #16634f;
+    }
+    footer {
+      color: var(--secundario);
+      font-size: 13px;
+      padding-top: 24px;
+    }
+    @media (max-width: 700px) {
+      main { padding: 24px 14px; }
+      .barra { padding: 16px; }
+      .rejilla { grid-template-columns: 1fr; }
+      .tarjeta { padding: 20px; }
+      h1 { font-size: 25px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="barra">
+    <div class="marca">RADAR</div>
+    <nav class="usuario" aria-label="Navegación principal">
+      {{ request.user.username }} ·
+      <a href="{% url 'panel_comercial' %}">Panel comercial</a> ·
+      <a href="{% url 'admin:index' %}">Administración</a>
+    </nav>
+  </header>
+
+  <main>
+    <a class="volver" href="{% url 'panel_comercial' %}">
+      ← Volver al panel
+    </a>
+
+    <div class="cabecera">
+      <div>
+        <div class="etiquetas">
+          <span class="etiqueta">
+            {{ oportunidad.get_estado_display }}
+          </span>
+          {% if oportunidad.es_caliente %}
+            <span class="etiqueta caliente">Consulta caliente</span>
+          {% else %}
+            <span class="etiqueta">Prospección</span>
+          {% endif %}
+        </div>
+        <h1>{{ oportunidad.titulo }}</h1>
+        <p class="subtitulo">
+          {{ oportunidad.organizacion.nombre }} ·
+          {{ oportunidad.empresa.nombre|default:"Empresa por identificar" }}
+        </p>
+      </div>
+
+      {% if puede_editar %}
+        <a class="boton"
+           href="{% url 'admin:core_oportunidad_change' oportunidad.pk %}">
+          Editar en administración
+        </a>
+      {% endif %}
+    </div>
+
+    <div class="rejilla">
+      <section class="tarjeta">
+        <h2>Resumen comercial</h2>
+        <dl>
+          <dt>Organización</dt>
+          <dd>{{ oportunidad.organizacion.nombre }}</dd>
+
+          <dt>Empresa</dt>
+          <dd>{{ oportunidad.empresa.nombre|default:"Empresa por identificar" }}</dd>
+
+          <dt>Origen</dt>
+          <dd>{{ oportunidad.get_origen_display }}</dd>
+
+          <dt>Canal</dt>
+          <dd>{{ oportunidad.get_canal_display }}</dd>
+
+          <dt>Estado</dt>
+          <dd>{{ oportunidad.get_estado_display }}</dd>
+
+          <dt>Responsable</dt>
+          <dd>{{ oportunidad.responsable|default:"Sin asignar" }}</dd>
+        </dl>
+      </section>
+
+      <section class="tarjeta">
+        <h2>Próximo seguimiento</h2>
+
+        {% if esta_cerrada %}
+          <div class="aviso">
+            Esta oportunidad está cerrada.
+          </div>
+        {% elif oportunidad.fecha_proxima_accion %}
+          {% if oportunidad.fecha_proxima_accion < hoy %}
+            <div class="aviso vencido">Seguimiento vencido</div>
+          {% elif oportunidad.fecha_proxima_accion == hoy %}
+            <div class="aviso hoy">Seguimiento para hoy</div>
+          {% else %}
+            <div class="aviso">Seguimiento programado</div>
+          {% endif %}
+        {% else %}
+          <div class="aviso">
+            Falta definir una fecha de seguimiento.
+          </div>
+        {% endif %}
+
+        <dl>
+          <dt>Fecha de próxima acción</dt>
+          <dd>
+            {{ oportunidad.fecha_proxima_accion|date:"d/m/Y"|default:"Sin fecha" }}
+          </dd>
+
+          <dt>Próxima acción</dt>
+          <dd class="texto">
+            {{ oportunidad.proxima_accion|default:"Acción por definir"|linebreaksbr }}
+          </dd>
+        </dl>
+      </section>
+
+      <section class="tarjeta ancho-completo">
+        <h2>Necesidad comercial</h2>
+        <div class="texto">
+          {{ oportunidad.necesidad|linebreaks }}
+        </div>
+      </section>
+
+      <section class="tarjeta">
+        <h2>Datos del consultante</h2>
+        <dl>
+          <dt>Nombre</dt>
+          <dd>{{ oportunidad.nombre_consultante|default:"Sin registrar" }}</dd>
+
+          <dt>Correo electrónico</dt>
+          <dd>{{ oportunidad.email_consultante|default:"Sin registrar" }}</dd>
+
+          <dt>Teléfono</dt>
+          <dd>{{ oportunidad.telefono_consultante|default:"Sin registrar" }}</dd>
+        </dl>
+      </section>
+
+      <section class="tarjeta">
+        <h2>Contacto y señal asociados</h2>
+        <dl>
+          <dt>Contacto</dt>
+          <dd>{{ oportunidad.contacto.nombre|default:"Sin contacto asociado" }}</dd>
+
+          <dt>Cargo del contacto</dt>
+          <dd>{{ oportunidad.contacto.cargo|default:"Sin registrar" }}</dd>
+
+          <dt>Señal</dt>
+          <dd>{{ oportunidad.senal.titulo|default:"Sin señal asociada" }}</dd>
+        </dl>
+      </section>
+
+      {% if oportunidad.motivo_cierre %}
+        <section class="tarjeta ancho-completo">
+          <h2>Motivo de cierre</h2>
+          <div class="texto">
+            {{ oportunidad.motivo_cierre|linebreaks }}
+          </div>
+        </section>
+      {% endif %}
+
+      <section class="tarjeta ancho-completo">
+        <h2>Notas</h2>
+        <div class="texto">
+          {{ oportunidad.notas|default:"Sin notas registradas."|linebreaks }}
+        </div>
+      </section>
+    </div>
+
+    <footer>
+      Creada: {{ oportunidad.creada_en|date:"d/m/Y H:i" }} ·
+      Última actualización: {{ oportunidad.actualizada_en|date:"d/m/Y H:i" }}.
+      Horario de Santiago.
+    </footer>
+  </main>
+</body>
+</html>
