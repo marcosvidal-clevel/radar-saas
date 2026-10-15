@@ -218,3 +218,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Documentos privados de candidatos RADAR SaaS
+/media_privada/

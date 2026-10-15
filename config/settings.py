@@ -132,3 +132,5 @@ CSRF_TRUSTED_ORIGINS = [
     'https://humble-tribble-xrx9v9j579p5f9v64-8000.app.github.dev',
     'https://localhost:8000',
 ]
+# Almacenamiento privado de documentos de candidatos
+MEDIA_ROOT = BASE_DIR / "media_privada"
