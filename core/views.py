@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.contrib.admin.views.decorators import staff_member_required
 from django.core.exceptions import PermissionDenied
+from django.core.paginator import Paginator
 from django.db.models import Q
 from django.shortcuts import render
 from django.utils import timezone
@@ -110,9 +111,31 @@ def panel_comercial(request):
     para_hoy = activas.filter(fecha_proxima_accion=hoy)
     sin_fecha = activas.filter(fecha_proxima_accion__isnull=True)
 
+    # La lista general incluye también seguimientos futuros.
+    paginador = Paginator(
+        activas.order_by("-creada_en", "-pk"),
+        20,
+    )
+    pagina_oportunidades = paginador.get_page(
+        request.GET.get("pagina")
+    )
+
+    # Los enlaces de página conservarán los filtros validados.
+    parametros = {}
+    if busqueda:
+        parametros["q"] = busqueda
+    if estado:
+        parametros["estado"] = estado
+    if canal:
+        parametros["canal"] = canal
+    if responsable:
+        parametros["responsable"] = responsable
+
+    from urllib.parse import urlencode
+
     contexto = {
         "hoy": hoy,
-        "total_activas": activas.count(),
+        "total_activas": paginador.count,
         "total_calientes": calientes.count(),
         "total_vencidas": vencidas.count(),
         "total_para_hoy": para_hoy.count(),
@@ -122,6 +145,8 @@ def panel_comercial(request):
             fecha_proxima_accion__lte=hoy
         ).order_by("fecha_proxima_accion", "pk")[:20],
         "sin_fecha": sin_fecha.order_by("-creada_en")[:20],
+        "pagina_oportunidades": pagina_oportunidades,
+        "parametros_filtros": urlencode(parametros),
         "puede_crear": administrador.has_add_permission(request),
         "estados_disponibles": estados_disponibles,
         "canales_disponibles": canales_disponibles,

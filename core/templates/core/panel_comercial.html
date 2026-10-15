@@ -50,6 +50,7 @@
       margin-bottom: 24px;
     }
     h1 { margin: 0 0 6px; font-size: 30px; }
+    h2 { margin: 0 0 5px; font-size: 21px; }
     .subtitulo { margin: 0; color: var(--secundario); }
     .boton {
       display: inline-block;
@@ -142,7 +143,6 @@
       overflow: hidden;
     }
     .titulo-seccion { padding: 20px 22px 14px; }
-    h2 { margin: 0 0 5px; font-size: 21px; }
     .titulo-seccion p {
       margin: 0;
       color: var(--secundario);
@@ -172,6 +172,17 @@
     }
     .fecha-vencida { color: #a32635; font-weight: bold; }
     .vacio { padding: 12px 22px 24px; color: var(--secundario); }
+    .paginacion {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 18px 22px;
+      border-top: 1px solid var(--borde);
+      font-size: 14px;
+    }
+    .paginas-enlaces { display: flex; gap: 10px; flex-wrap: wrap; }
     footer { color: var(--secundario); font-size: 13px; padding: 8px 0; }
     @media (max-width: 950px) {
       .indicadores { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -276,7 +287,6 @@
              href="{% url 'panel_comercial' %}">Limpiar</a>
         </div>
       </form>
-
       <p class="aviso-filtros">
         {% if hay_filtros %}
           Búsqueda o filtros aplicados: los indicadores y las tablas muestran los resultados seleccionados.
@@ -307,6 +317,87 @@
         <span class="etiqueta">Sin fecha de seguimiento</span>
         <span class="numero">{{ total_sin_fecha }}</span>
       </div>
+    </section>
+
+    <section class="seccion" id="oportunidades-activas">
+      <div class="titulo-seccion">
+        <h2>Todas las oportunidades activas</h2>
+        <p>Consultas entrantes y prospección, incluidos los seguimientos futuros. Del registro más reciente al más antiguo.</p>
+      </div>
+      {% if pagina_oportunidades %}
+        <div class="tabla">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Oportunidad</th>
+                <th scope="col">Origen</th>
+                <th scope="col">Canal</th>
+                <th scope="col">Estado</th>
+                <th scope="col">Responsable</th>
+                <th scope="col">Seguimiento</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for oportunidad in pagina_oportunidades %}
+                <tr>
+                  <td>
+                    <a class="titulo-oportunidad"
+                       href="{% url 'admin:core_oportunidad_change' oportunidad.pk %}">
+                      {{ oportunidad.titulo }}
+                    </a>
+                    <span class="detalle">
+                      {{ oportunidad.organizacion.nombre }} ·
+                      {{ oportunidad.empresa.nombre|default:"Empresa por identificar" }}
+                    </span>
+                  </td>
+                  <td>{{ oportunidad.get_origen_display }}</td>
+                  <td>{{ oportunidad.get_canal_display }}</td>
+                  <td><span class="estado">{{ oportunidad.get_estado_display }}</span></td>
+                  <td>{{ oportunidad.responsable.usuario.username|default:"Sin asignar" }}</td>
+                  <td>
+                    {% if oportunidad.fecha_proxima_accion %}
+                      {% if oportunidad.fecha_proxima_accion < hoy %}
+                        <span class="fecha-vencida">
+                          {{ oportunidad.fecha_proxima_accion|date:"d/m/Y" }} · Vencido
+                        </span>
+                      {% elif oportunidad.fecha_proxima_accion == hoy %}
+                        {{ oportunidad.fecha_proxima_accion|date:"d/m/Y" }} · Hoy
+                      {% else %}
+                        {{ oportunidad.fecha_proxima_accion|date:"d/m/Y" }}
+                      {% endif %}
+                    {% else %}
+                      Sin fecha
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <nav class="paginacion" aria-label="Páginas de oportunidades activas">
+          <span>
+            Mostrando {{ pagina_oportunidades.start_index }}–{{ pagina_oportunidades.end_index }}
+            de {{ pagina_oportunidades.paginator.count }}.
+            Página {{ pagina_oportunidades.number }} de {{ pagina_oportunidades.paginator.num_pages }}.
+          </span>
+          <div class="paginas-enlaces">
+            {% if pagina_oportunidades.has_previous %}
+              <a class="boton boton-secundario"
+                 href="?{% if parametros_filtros %}{{ parametros_filtros }}&amp;{% endif %}pagina={{ pagina_oportunidades.previous_page_number }}#oportunidades-activas">
+                Anterior
+              </a>
+            {% endif %}
+            {% if pagina_oportunidades.has_next %}
+              <a class="boton boton-secundario"
+                 href="?{% if parametros_filtros %}{{ parametros_filtros }}&amp;{% endif %}pagina={{ pagina_oportunidades.next_page_number }}#oportunidades-activas">
+                Siguiente
+              </a>
+            {% endif %}
+          </div>
+        </nav>
+      {% else %}
+        <p class="vacio">No hay oportunidades activas para esta selección.</p>
+      {% endif %}
     </section>
 
     <section class="seccion">
@@ -343,13 +434,7 @@
                   <td>{{ oportunidad.get_canal_display }}</td>
                   <td><span class="estado">{{ oportunidad.get_estado_display }}</span></td>
                   <td>{{ oportunidad.responsable.usuario.username|default:"Sin asignar" }}</td>
-                  <td>
-                    {% if oportunidad.fecha_proxima_accion %}
-                      {{ oportunidad.fecha_proxima_accion|date:"d/m/Y" }}
-                    {% else %}
-                      Sin fecha
-                    {% endif %}
-                  </td>
+                  <td>{{ oportunidad.fecha_proxima_accion|date:"d/m/Y"|default:"Sin fecha" }}</td>
                 </tr>
               {% endfor %}
             </tbody>
@@ -445,8 +530,8 @@
     </section>
 
     <footer>
-      Los indicadores incluyen únicamente las oportunidades que puedes consultar
-      y respetan la búsqueda y los filtros seleccionados.
+      Los indicadores cuentan todas las oportunidades que puedes consultar
+      y que coinciden con la búsqueda y los filtros, aunque la lista tenga varias páginas.
       Las ganadas, perdidas y descartadas quedan fuera de las listas activas.
     </footer>
   </main>
