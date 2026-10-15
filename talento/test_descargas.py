@@ -168,6 +168,15 @@ class SeguridadDescargasTests(TransactionTestCase):
         self.assertEqual(respuesta.status_code, 200)
         respuesta.close()
 
+    def test_organizacion_desactivada_no_permite_descarga(self):
+        self.organizacion_a.activa = False
+        self.organizacion_a.save(update_fields=["activa"])
+
+        self.client.force_login(self.administrador)
+        respuesta = self.client.get(self.url(self.documento))
+
+        self.assertEqual(respuesta.status_code, 403)
+
     def test_usuario_otra_empresa_no_descarga(self):
         self.client.force_login(self.usuario_ajeno)
 

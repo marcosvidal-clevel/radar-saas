@@ -37,6 +37,7 @@ def descargar_documento_candidato(request, pk):
         membresia = Membresia.objects.filter(
             usuario=request.user,
             organizacion_id=documento.candidato.organizacion_id,
+            organizacion__activa=True,
             activa=True,
             rol__in=(
                 Membresia.Rol.ADMINISTRADOR,
