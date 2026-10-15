@@ -242,3 +242,48 @@ class DocumentoCandidatoAdmin(
                 )
 
         super().save_model(request, obj, form, change)
+
+
+from .models import Vacante, Postulacion
+
+
+@admin.register(Vacante)
+class VacanteAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
+    list_display = (
+        "titulo",
+        "organizacion",
+        "empresa",
+        "estado",
+        "activa",
+    )
+    list_filter = ("estado", "activa")
+    search_fields = ("titulo",)
+    list_select_related = ("organizacion", "empresa")
+
+
+@admin.register(Postulacion)
+class PostulacionAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
+    organizacion_lookup = "vacante__organizacion_id"
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        campo = super().formfield_for_foreignkey(
+            db_field, request, **kwargs
+        )
+        if db_field.name == "vacante" and not request.user.is_superuser:
+            organizaciones = self.organizaciones_permitidas(
+                request, self.ROLES_GESTION
+            )
+            campo.queryset = Vacante.objects.filter(
+                organizacion_id__in=organizaciones
+            )
+        return campo
+
+    list_display = (
+        "candidato",
+        "vacante",
+        "estado",
+        "fuente",
+    )
+    list_filter = ("estado", "fuente")
+    search_fields = ("candidato__nombre", "vacante__titulo")
+    list_select_related = ("candidato", "vacante")

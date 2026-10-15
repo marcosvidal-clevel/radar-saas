@@ -223,6 +223,10 @@ class OrganizacionAdminMixin:
                 "contacto": "empresa__organizacion_id",
                 "senal": "empresa__organizacion_id",
                 "membresia": "organizacion_id",
+                "oportunidad": "organizacion_id",
+                "vacante": "organizacion_id",
+                "candidato": "organizacion_id",
+                "documentocandidato": "candidato__organizacion_id",
             }
 
             ruta = rutas.get(

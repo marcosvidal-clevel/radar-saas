@@ -177,3 +177,184 @@ class DocumentoCandidato(models.Model):
 
     def __str__(self):
         return f"{self.candidato.nombre} - {self.nombre}"
+
+
+class Vacante(models.Model):
+    class Estado(models.TextChoices):
+        BORRADOR = "borrador", "Borrador"
+        ABIERTA = "abierta", "Abierta"
+        PAUSADA = "pausada", "Pausada"
+        CERRADA = "cerrada", "Cerrada"
+        CANCELADA = "cancelada", "Cancelada"
+
+    organizacion = models.ForeignKey(
+        "core.Organizacion",
+        on_delete=models.PROTECT,
+        related_name="vacantes",
+    )
+    empresa = models.ForeignKey(
+        "core.EmpresaProspectada",
+        on_delete=models.PROTECT,
+        related_name="vacantes",
+        null=True,
+        blank=True,
+    )
+    oportunidad = models.ForeignKey(
+        "core.Oportunidad",
+        on_delete=models.PROTECT,
+        related_name="vacantes",
+        null=True,
+        blank=True,
+    )
+
+    titulo = models.CharField(max_length=250)
+    descripcion = models.TextField(blank=True)
+    requisitos = models.TextField(blank=True)
+    region = models.CharField(max_length=100, blank=True)
+    ciudad = models.CharField(max_length=100, blank=True)
+
+    estado = models.CharField(
+        max_length=20,
+        choices=Estado.choices,
+        default=Estado.BORRADOR,
+    )
+    publicar_web = models.BooleanField(default=False)
+    activa = models.BooleanField(default=True)
+
+    creada_en = models.DateTimeField(auto_now_add=True)
+    actualizada_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Vacante"
+        verbose_name_plural = "Vacantes"
+        ordering = ["-creada_en"]
+
+    def clean(self):
+        super().clean()
+        errores = {}
+
+        if self.empresa_id and self.organizacion_id:
+            if self.empresa.organizacion_id != self.organizacion_id:
+                errores["empresa"] = (
+                    "La empresa debe pertenecer a la misma organización."
+                )
+
+        if self.oportunidad_id and self.organizacion_id:
+            if self.oportunidad.organizacion_id != self.organizacion_id:
+                errores["oportunidad"] = (
+                    "La oportunidad debe pertenecer a la misma organización."
+                )
+
+        if self.empresa_id and self.oportunidad_id:
+            if (
+                self.oportunidad.empresa_id
+                and self.oportunidad.empresa_id != self.empresa_id
+            ):
+                errores["oportunidad"] = (
+                    "La oportunidad debe corresponder a la empresa indicada."
+                )
+
+        if errores:
+            raise ValidationError(errores)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.titulo
+
+
+class Postulacion(models.Model):
+    class Estado(models.TextChoices):
+        RECIBIDA = "recibida", "Recibida"
+        PRESELECCIONADA = "preseleccionada", "Preseleccionada"
+        ENTREVISTA = "entrevista", "Entrevista"
+        EVALUACION = "evaluacion", "Evaluación"
+        FINALISTA = "finalista", "Finalista"
+        SELECCIONADA = "seleccionada", "Seleccionada"
+        DESCARTADA = "descartada", "Descartada"
+        RETIRADA = "retirada", "Retirada"
+
+    class Fuente(models.TextChoices):
+        WEB = "web", "Página web"
+        LINKEDIN = "linkedin", "LinkedIn"
+        EMAIL = "email", "Correo electrónico"
+        WHATSAPP = "whatsapp", "WhatsApp"
+        REFERIDO = "referido", "Referido"
+        BUSQUEDA = "busqueda", "Búsqueda directa"
+        MANUAL = "manual", "Ingreso manual"
+        OTRO = "otro", "Otro"
+
+    vacante = models.ForeignKey(
+        "talento.Vacante",
+        on_delete=models.PROTECT,
+        related_name="postulaciones",
+    )
+    candidato = models.ForeignKey(
+        "talento.Candidato",
+        on_delete=models.PROTECT,
+        related_name="postulaciones",
+    )
+    documento_cv = models.ForeignKey(
+        "talento.DocumentoCandidato",
+        on_delete=models.PROTECT,
+        related_name="postulaciones",
+        null=True,
+        blank=True,
+    )
+    estado = models.CharField(
+        max_length=20,
+        choices=Estado.choices,
+        default=Estado.RECIBIDA,
+    )
+    fuente = models.CharField(
+        max_length=20,
+        choices=Fuente.choices,
+        default=Fuente.MANUAL,
+    )
+    observaciones = models.TextField(blank=True)
+    creada_en = models.DateTimeField(auto_now_add=True)
+    actualizada_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Postulación"
+        verbose_name_plural = "Postulaciones"
+        ordering = ["-creada_en"]
+
+    def clean(self):
+        super().clean()
+        errores = {}
+
+        if self.vacante_id and self.candidato_id:
+            if (
+                self.vacante.organizacion_id
+                != self.candidato.organizacion_id
+            ):
+                errores["candidato"] = (
+                    "El candidato y la vacante deben pertenecer "
+                    "a la misma organización."
+                )
+
+        if self.documento_cv_id and self.candidato_id:
+            if self.documento_cv.candidato_id != self.candidato_id:
+                errores["documento_cv"] = (
+                    "El documento debe pertenecer al candidato."
+                )
+            elif (
+                self.documento_cv.tipo
+                != DocumentoCandidato.Tipo.CURRICULUM
+            ):
+                errores["documento_cv"] = (
+                    "El documento seleccionado debe ser un currículum."
+                )
+
+        if errores:
+            raise ValidationError(errores)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.candidato.nombre} - {self.vacante.titulo}"
