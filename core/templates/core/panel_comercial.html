@@ -22,7 +22,7 @@
       line-height: 1.5;
     }
     a { color: var(--azul); }
-    a:focus-visible, button:focus-visible {
+    a:focus-visible, button:focus-visible, select:focus-visible {
       outline: 3px solid #d79416;
       outline-offset: 4px;
     }
@@ -57,6 +57,51 @@
       text-decoration: none;
       padding: 11px 18px;
       border-radius: 8px;
+      border: 1px solid var(--azul);
+      font: inherit;
+      cursor: pointer;
+      text-align: center;
+    }
+    .boton-secundario {
+      background: white;
+      color: var(--azul);
+      border-color: var(--borde);
+    }
+    .filtros {
+      background: white;
+      border: 1px solid var(--borde);
+      border-radius: 12px;
+      padding: 20px 22px;
+      margin-bottom: 24px;
+    }
+    .filtros h2 { font-size: 18px; }
+    .formulario-filtros {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+      gap: 16px;
+      align-items: end;
+      margin-top: 16px;
+    }
+    .campo label {
+      display: block;
+      font-size: 14px;
+      margin-bottom: 6px;
+    }
+    .campo select {
+      width: 100%;
+      min-height: 46px;
+      padding: 10px;
+      border: 1px solid #aab8c4;
+      border-radius: 8px;
+      background: white;
+      color: var(--texto);
+      font: inherit;
+    }
+    .acciones-filtros { display: flex; gap: 8px; flex-wrap: wrap; }
+    .aviso-filtros {
+      color: var(--secundario);
+      font-size: 14px;
+      margin: 14px 0 0;
     }
     .indicadores {
       display: grid;
@@ -118,6 +163,7 @@
     footer { color: var(--secundario); font-size: 13px; padding: 8px 0; }
     @media (max-width: 950px) {
       .indicadores { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .formulario-filtros { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 600px) {
       main { padding: 24px 14px; }
@@ -125,6 +171,7 @@
       h1 { font-size: 25px; }
       .indicadores { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .indicador { padding: 14px; }
+      .formulario-filtros { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -152,6 +199,69 @@
         </a>
       {% endif %}
     </div>
+
+    <section class="filtros" aria-labelledby="titulo-filtros">
+      <h2 id="titulo-filtros">Filtrar oportunidades activas</h2>
+      <form method="get" action="{% url 'panel_comercial' %}"
+            class="formulario-filtros">
+        <div class="campo">
+          <label for="filtro-estado">Estado</label>
+          <select id="filtro-estado" name="estado">
+            <option value="">Todos los estados activos</option>
+            {% for valor, etiqueta in estados_disponibles %}
+              <option value="{{ valor }}"
+                {% if filtro_estado == valor %}selected{% endif %}>
+                {{ etiqueta }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="campo">
+          <label for="filtro-canal">Canal</label>
+          <select id="filtro-canal" name="canal">
+            <option value="">Todos los canales</option>
+            {% for valor, etiqueta in canales_disponibles %}
+              <option value="{{ valor }}"
+                {% if filtro_canal == valor %}selected{% endif %}>
+                {{ etiqueta }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="campo">
+          <label for="filtro-responsable">Responsable</label>
+          <select id="filtro-responsable" name="responsable">
+            <option value="">Todos los responsables</option>
+            <option value="sin_asignar"
+              {% if filtro_responsable == "sin_asignar" %}selected{% endif %}>
+              Sin asignar
+            </option>
+            {% for opcion in responsables_disponibles %}
+              <option value="{{ opcion.id }}"
+                {% if filtro_responsable == opcion.id %}selected{% endif %}>
+                {{ opcion.nombre }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="acciones-filtros">
+          <button class="boton" type="submit">Aplicar filtros</button>
+          <a class="boton boton-secundario"
+             href="{% url 'panel_comercial' %}">Limpiar</a>
+        </div>
+      </form>
+
+      <p class="aviso-filtros">
+        {% if hay_filtros %}
+          Filtros aplicados: los indicadores y las tablas muestran los resultados seleccionados.
+        {% else %}
+          Los indicadores y las tablas muestran todas las oportunidades activas que puedes consultar.
+        {% endif %}
+      </p>
+    </section>
 
     <section class="indicadores" aria-label="Indicadores comerciales">
       <div class="indicador">
@@ -223,7 +333,7 @@
           </table>
         </div>
       {% else %}
-        <p class="vacio">No tienes consultas calientes activas visibles.</p>
+        <p class="vacio">No hay consultas calientes activas para esta selección.</p>
       {% endif %}
     </section>
 
@@ -270,7 +380,7 @@
           </table>
         </div>
       {% else %}
-        <p class="vacio">No tienes seguimientos para hoy ni vencidos.</p>
+        <p class="vacio">No hay seguimientos para hoy ni vencidos para esta selección.</p>
       {% endif %}
     </section>
 
@@ -307,12 +417,13 @@
           </table>
         </div>
       {% else %}
-        <p class="vacio">Todas tus oportunidades activas visibles tienen una fecha de seguimiento.</p>
+        <p class="vacio">No hay oportunidades sin fecha de seguimiento para esta selección.</p>
       {% endif %}
     </section>
 
     <footer>
-      Los indicadores incluyen únicamente las oportunidades que puedes consultar.
+      Los indicadores incluyen únicamente las oportunidades que puedes consultar
+      y respetan los filtros seleccionados.
       Las ganadas, perdidas y descartadas quedan fuera de las listas activas.
     </footer>
   </main>

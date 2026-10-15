@@ -122,8 +122,11 @@ class PanelComercialTests(TestCase):
         parche.start()
         self.addCleanup(parche.stop)
 
-    def abrir_panel(self):
-        return self.client.get(reverse("panel_comercial"))
+    def abrir_panel(self, filtros=None):
+        return self.client.get(
+            reverse("panel_comercial"),
+            filtros or {},
+        )
 
     def test_indicadores_excluyen_cerradas_y_organizaciones_ajenas(self):
         respuesta = self.abrir_panel()
@@ -207,3 +210,134 @@ class PanelComercialTests(TestCase):
         self.assertEqual(respuesta.context["total_para_hoy"], 2)
         self.assertContains(respuesta, self.ajena.titulo)
         self.assertTrue(respuesta.context["puede_crear"])
+
+    def test_filtro_canal_actualiza_indicadores_y_tablas(self):
+        respuesta = self.abrir_panel({
+            "canal": Oportunidad.Canal.WHATSAPP,
+        })
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.context["total_activas"], 1)
+        self.assertEqual(respuesta.context["total_calientes"], 1)
+        self.assertEqual(respuesta.context["total_para_hoy"], 1)
+        self.assertEqual(respuesta.context["total_vencidas"], 0)
+        self.assertEqual(respuesta.context["total_sin_fecha"], 0)
+        self.assertContains(respuesta, self.para_hoy.titulo)
+        self.assertNotContains(respuesta, self.vencida.titulo)
+        self.assertNotContains(respuesta, self.futura.titulo)
+        self.assertNotContains(respuesta, self.sin_fecha.titulo)
+        self.assertEqual(
+            respuesta.context["filtro_canal"],
+            Oportunidad.Canal.WHATSAPP,
+        )
+        self.assertTrue(respuesta.context["hay_filtros"])
+
+    def test_filtro_estado_se_combina_con_canal(self):
+        self.para_hoy.estado = Oportunidad.Estado.EN_CONTACTO
+        self.para_hoy.save()
+
+        respuesta = self.abrir_panel({
+            "estado": Oportunidad.Estado.EN_CONTACTO,
+        })
+        self.assertEqual(respuesta.context["total_activas"], 1)
+        self.assertContains(respuesta, self.para_hoy.titulo)
+        self.assertNotContains(respuesta, self.vencida.titulo)
+
+        respuesta = self.abrir_panel({
+            "estado": Oportunidad.Estado.EN_CONTACTO,
+            "canal": Oportunidad.Canal.EMAIL,
+        })
+        self.assertEqual(respuesta.context["total_activas"], 0)
+        self.assertEqual(respuesta.context["total_calientes"], 0)
+        self.assertEqual(respuesta.context["total_para_hoy"], 0)
+        self.assertEqual(respuesta.context["total_vencidas"], 0)
+        self.assertEqual(respuesta.context["total_sin_fecha"], 0)
+        self.assertNotContains(respuesta, self.para_hoy.titulo)
+        self.assertNotContains(respuesta, self.vencida.titulo)
+
+    def test_filtro_responsable_muestra_solo_asignadas(self):
+        respuesta = self.abrir_panel({
+            "responsable": str(self.membresia.pk),
+        })
+
+        self.assertEqual(respuesta.context["total_activas"], 1)
+        self.assertContains(respuesta, self.para_hoy.titulo)
+        self.assertNotContains(respuesta, self.vencida.titulo)
+        self.assertEqual(
+            respuesta.context["filtro_responsable"],
+            str(self.membresia.pk),
+        )
+
+    def test_filtro_sin_asignar(self):
+        respuesta = self.abrir_panel({
+            "responsable": "sin_asignar",
+        })
+
+        self.assertEqual(respuesta.context["total_activas"], 3)
+        self.assertEqual(respuesta.context["total_para_hoy"], 0)
+        self.assertEqual(respuesta.context["total_vencidas"], 1)
+        self.assertEqual(respuesta.context["total_sin_fecha"], 1)
+        self.assertNotContains(respuesta, self.para_hoy.titulo)
+        self.assertContains(respuesta, self.vencida.titulo)
+        self.assertContains(respuesta, self.futura.titulo)
+        self.assertContains(respuesta, self.sin_fecha.titulo)
+
+    def test_valores_invalidos_se_ignoran_sin_ampliar_acceso(self):
+        respuesta = self.abrir_panel({
+            "estado": "estado_inexistente",
+            "canal": "canal_inexistente",
+            "responsable": "no_es_un_identificador",
+        })
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.context["total_activas"], 4)
+        self.assertEqual(respuesta.context["filtro_estado"], "")
+        self.assertEqual(respuesta.context["filtro_canal"], "")
+        self.assertEqual(respuesta.context["filtro_responsable"], "")
+        self.assertFalse(respuesta.context["hay_filtros"])
+        self.assertNotContains(respuesta, self.ajena.titulo)
+
+    def test_responsable_ajeno_no_aparece_ni_permite_ver_datos(self):
+        Usuario = get_user_model()
+        usuario_ajeno = Usuario.objects.create_user(
+            username="responsable_privado",
+        )
+        membresia_ajena = Membresia.objects.create(
+            usuario=usuario_ajeno,
+            organizacion=self.otra_organizacion,
+            rol=Membresia.Rol.ADMINISTRADOR,
+        )
+        self.ajena.responsable = membresia_ajena
+        self.ajena.save()
+
+        respuesta = self.abrir_panel({
+            "responsable": str(membresia_ajena.pk),
+        })
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.context["total_activas"], 4)
+        opciones = {
+            opcion["id"]
+            for opcion in respuesta.context["responsables_disponibles"]
+        }
+        self.assertEqual(opciones, {str(self.membresia.pk)})
+        self.assertNotContains(respuesta, usuario_ajeno.username)
+        self.assertNotContains(respuesta, self.ajena.titulo)
+        self.assertEqual(respuesta.context["filtro_responsable"], "")
+
+    def test_limpiar_y_filtrar_no_amplia_acceso_del_colaborador(self):
+        self.membresia.rol = Membresia.Rol.COLABORADOR
+        self.membresia.save()
+
+        respuesta = self.abrir_panel({
+            "responsable": "sin_asignar",
+        })
+        self.assertEqual(respuesta.context["total_activas"], 0)
+        self.assertNotContains(respuesta, self.vencida.titulo)
+
+        respuesta = self.abrir_panel()
+        self.assertEqual(respuesta.context["total_activas"], 1)
+        self.assertFalse(respuesta.context["hay_filtros"])
+        self.assertContains(respuesta, self.para_hoy.titulo)
+        self.assertNotContains(respuesta, self.vencida.titulo)
+        self.assertNotContains(respuesta, self.ajena.titulo)
