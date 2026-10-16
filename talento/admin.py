@@ -1,12 +1,17 @@
+
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied
 from django.utils.html import format_html
 from django.urls import reverse
 
 from core.admin_permisos import OrganizacionAdminMixin
-from core.models import Membresia
 
-from .models import Candidato, DocumentoCandidato
+from .models import (
+    Candidato,
+    DocumentoCandidato,
+    Vacante,
+    Postulacion,
+)
 
 
 @admin.register(Candidato)
@@ -38,7 +43,21 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
         "especialidad",
         "competencias",
         "experiencia",
+        "documentos__texto_extraido",
     )
+
+    def get_search_results(self, request, queryset, search_term):
+        queryset, use_distinct = super().get_search_results(
+            request,
+            queryset,
+            search_term,
+        )
+
+        if search_term:
+            queryset = queryset.distinct()
+            use_distinct = True
+
+        return queryset, use_distinct
 
     readonly_fields = (
         "creado_en",
@@ -244,11 +263,9 @@ class DocumentoCandidatoAdmin(
         super().save_model(request, obj, form, change)
 
 
-from .models import Vacante, Postulacion
-
-
 @admin.register(Vacante)
 class VacanteAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
+
     list_display = (
         "titulo",
         "organizacion",
@@ -256,6 +273,7 @@ class VacanteAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
         "estado",
         "activa",
     )
+
     list_filter = ("estado", "activa")
     search_fields = ("titulo",)
     list_select_related = ("organizacion", "empresa")
@@ -263,11 +281,14 @@ class VacanteAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
 
 @admin.register(Postulacion)
 class PostulacionAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
+
     organizacion_lookup = "vacante__organizacion_id"
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         campo = super().formfield_for_foreignkey(
-            db_field, request, **kwargs
+            db_field,
+            request,
+            **kwargs,
         )
 
         if db_field.name == "documento_cv":
@@ -307,6 +328,12 @@ class PostulacionAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
         "estado",
         "fuente",
     )
+
     list_filter = ("estado", "fuente")
-    search_fields = ("candidato__nombre", "vacante__titulo")
+
+    search_fields = (
+        "candidato__nombre",
+        "vacante__titulo",
+    )
+
     list_select_related = ("candidato", "vacante")

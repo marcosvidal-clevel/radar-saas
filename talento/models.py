@@ -147,6 +147,11 @@ class DocumentoCandidato(models.Model):
 
     observaciones = models.TextField(blank=True)
 
+    texto_extraido = models.TextField(
+        blank=True,
+        editable=False,
+    )
+
     creado_en = models.DateTimeField(auto_now_add=True)
     actualizado_en = models.DateTimeField(auto_now=True)
 
@@ -172,14 +177,71 @@ class DocumentoCandidato(models.Model):
                 })
 
     def save(self, *args, **kwargs):
+        from .extraccion_cv import (
+            extraer_texto_cv,
+            ErrorExtraccionCV,
+        )
+
         self.full_clean()
-        return super().save(*args, **kwargs)
+
+        anterior = None
+
+        if self.pk:
+            anterior = type(self).objects.filter(
+                pk=self.pk
+            ).values("archivo", "tipo").first()
+
+        archivo_cambio = (
+            anterior is None
+            or anterior["archivo"] != self.archivo.name
+            or not self.archivo._committed
+        )
+
+        tipo_cambio = (
+            anterior is not None
+            and anterior["tipo"] != self.tipo
+        )
+
+        update_fields = kwargs.get("update_fields")
+
+        if update_fields is not None:
+            campos = set(update_fields)
+            archivo_cambio = (
+                archivo_cambio and "archivo" in campos
+            )
+            tipo_cambio = (
+                tipo_cambio and "tipo" in campos
+            )
+
+        resultado = super().save(*args, **kwargs)
+
+        if archivo_cambio or tipo_cambio:
+            texto = ""
+
+            if self.tipo == self.Tipo.CURRICULUM and self.archivo:
+                try:
+                    with self.archivo.open("rb") as archivo:
+                        texto = extraer_texto_cv(
+                            archivo,
+                            self.archivo.name,
+                        )
+                except (ErrorExtraccionCV, OSError):
+                    texto = ""
+
+            self.texto_extraido = texto
+
+            type(self).objects.filter(pk=self.pk).update(
+                texto_extraido=texto
+            )
+
+        return resultado
 
     def __str__(self):
         return f"{self.candidato.nombre} - {self.nombre}"
 
 
 class Vacante(models.Model):
+
     class Estado(models.TextChoices):
         BORRADOR = "borrador", "Borrador"
         ABIERTA = "abierta", "Abierta"
@@ -192,6 +254,7 @@ class Vacante(models.Model):
         on_delete=models.PROTECT,
         related_name="vacantes",
     )
+
     empresa = models.ForeignKey(
         "core.EmpresaProspectada",
         on_delete=models.PROTECT,
@@ -199,6 +262,7 @@ class Vacante(models.Model):
         null=True,
         blank=True,
     )
+
     oportunidad = models.ForeignKey(
         "core.Oportunidad",
         on_delete=models.PROTECT,
@@ -210,6 +274,7 @@ class Vacante(models.Model):
     titulo = models.CharField(max_length=250)
     descripcion = models.TextField(blank=True)
     requisitos = models.TextField(blank=True)
+
     region = models.CharField(max_length=100, blank=True)
     ciudad = models.CharField(max_length=100, blank=True)
 
@@ -218,6 +283,7 @@ class Vacante(models.Model):
         choices=Estado.choices,
         default=Estado.BORRADOR,
     )
+
     publicar_web = models.BooleanField(default=False)
     activa = models.BooleanField(default=True)
 
@@ -266,6 +332,7 @@ class Vacante(models.Model):
 
 
 class Postulacion(models.Model):
+
     class Estado(models.TextChoices):
         RECIBIDA = "recibida", "Recibida"
         PRESELECCIONADA = "preseleccionada", "Preseleccionada"
@@ -291,11 +358,13 @@ class Postulacion(models.Model):
         on_delete=models.PROTECT,
         related_name="postulaciones",
     )
+
     candidato = models.ForeignKey(
         "talento.Candidato",
         on_delete=models.PROTECT,
         related_name="postulaciones",
     )
+
     documento_cv = models.ForeignKey(
         "talento.DocumentoCandidato",
         on_delete=models.PROTECT,
@@ -303,17 +372,21 @@ class Postulacion(models.Model):
         null=True,
         blank=True,
     )
+
     estado = models.CharField(
         max_length=20,
         choices=Estado.choices,
         default=Estado.RECIBIDA,
     )
+
     fuente = models.CharField(
         max_length=20,
         choices=Fuente.choices,
         default=Fuente.MANUAL,
     )
+
     observaciones = models.TextField(blank=True)
+
     creada_en = models.DateTimeField(auto_now_add=True)
     actualizada_en = models.DateTimeField(auto_now=True)
 
@@ -341,6 +414,7 @@ class Postulacion(models.Model):
                 errores["documento_cv"] = (
                     "El documento debe pertenecer al candidato."
                 )
+
             elif (
                 self.documento_cv.tipo
                 != DocumentoCandidato.Tipo.CURRICULUM
