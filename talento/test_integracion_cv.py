@@ -58,6 +58,7 @@ class CargaBusquedaCVIntegracionTests(TestCase):
             codename__in=(
                 "view_candidato",
                 "add_documentocandidato",
+                "change_documentocandidato",
                 "view_documentocandidato",
             ),
         ))
@@ -163,5 +164,86 @@ class CargaBusquedaCVIntegracionTests(TestCase):
         self.comprobar_carga_busqueda_y_aislamiento(
             "docx",
             crear_docx("Experiencia Zafirocurricular"),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+
+    def comprobar_reemplazo_cv(self, extension, generar, tipo_mime):
+        anterior = "Ambarcurricular"
+        nueva = "Rubicurricular"
+        url_busqueda = reverse("admin:talento_candidato_changelist")
+        self.client.force_login(self.administrador)
+        datos = {
+            "candidato": self.candidato.pk,
+            "tipo": DocumentoCandidato.Tipo.CURRICULUM,
+            "nombre": "Curriculum sintetico",
+            "vigente": "on",
+            "es_cv_principal": "on",
+            "_save": "Guardar",
+        }
+        contenido_anterior = generar(f"Experiencia {anterior}")
+        contenido_nuevo = generar(f"Experiencia {nueva}")
+
+        def subir(url, contenido):
+            # El mismo nombre original también debe permitir renovar el texto.
+            return self.client.post(url, {
+                **datos,
+                "archivo": SimpleUploadedFile(
+                    f"perfil.{extension}", contenido, content_type=tipo_mime
+                ),
+            })
+
+        def comprobar_busqueda(palabra, esperados):
+            respuesta = self.client.get(url_busqueda, {"q": palabra})
+            self.assertEqual(respuesta.status_code, 200)
+            self.assertEqual(list(respuesta.context["cl"].queryset), esperados)
+
+        respuesta = subir(
+            reverse("admin:talento_documentocandidato_add"), contenido_anterior
+        )
+        self.assertEqual(respuesta.status_code, 302)
+        documento = DocumentoCandidato.objects.get(candidato=self.candidato)
+        self.assertIn(anterior, documento.texto_extraido)
+        self.assertNotIn(nueva, documento.texto_extraido)
+        comprobar_busqueda(anterior, [self.candidato])
+        comprobar_busqueda(nueva, [])
+
+        self.client.force_login(self.administrador_ajeno)
+        comprobar_busqueda(anterior, [])
+        url_descarga = reverse("descargar_documento_candidato", args=[documento.pk])
+        self.assertEqual(self.client.get(url_descarga).status_code, 403)
+
+        self.client.force_login(self.administrador)
+        respuesta = subir(
+            reverse("admin:talento_documentocandidato_change", args=[documento.pk]),
+            contenido_nuevo,
+        )
+        self.assertEqual(respuesta.status_code, 302)
+        documento.refresh_from_db()
+        self.assertEqual(DocumentoCandidato.objects.count(), 1)
+        self.assertIn(nueva, documento.texto_extraido)
+        self.assertNotIn(anterior, documento.texto_extraido)
+        comprobar_busqueda(nueva, [self.candidato])
+        comprobar_busqueda(anterior, [])
+
+        respuesta = self.client.get(url_descarga)
+        self.addCleanup(respuesta.close)
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(b"".join(respuesta.streaming_content), contenido_nuevo)
+        respuesta.close()
+
+        self.client.force_login(self.administrador_ajeno)
+        comprobar_busqueda(nueva, [])
+        comprobar_busqueda(anterior, [])
+        respuesta = self.client.get(url_descarga)
+        self.assertEqual(respuesta.status_code, 403)
+        self.assertFalse(respuesta.streaming)
+
+    def test_reemplazo_pdf_actualiza_texto_busqueda_y_aislamiento(self):
+        self.comprobar_reemplazo_cv("pdf", crear_pdf, "application/pdf")
+
+    def test_reemplazo_docx_actualiza_texto_busqueda_y_aislamiento(self):
+        self.comprobar_reemplazo_cv(
+            "docx",
+            crear_docx,
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         )
