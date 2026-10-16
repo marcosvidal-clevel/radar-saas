@@ -12,12 +12,18 @@ class ErrorExtraccionCV(Exception):
 
 def normalizar_texto_pdf(texto):
     """
-    Corrige secuencias largas de letras separadas
-    artificialmente por espacios.
+    Corrige fragmentos de palabras separados artificialmente
+    durante la extracción de texto de archivos PDF.
     """
     lineas = []
 
-    for linea in texto.split("\n"):
+    correcciones = (
+        (r"\bSu\s+bgere\s+nte\b", "Subgerente"),
+        (r"\bProye\s+ctos\b", "Proyectos"),
+        (r"\bLici\s+ta\s+ci\s+o\s+nes\b", "Licitaciones"),
+    )
+
+    for linea in texto.splitlines():
         partes = re.split(r"(\s{2,})", linea)
         partes_normalizadas = []
 
@@ -26,18 +32,24 @@ def normalizar_texto_pdf(texto):
                 partes_normalizadas.append(parte)
                 continue
 
-            patron = r"(?<!\S)(?:[^\W\d_]\s){3,}[^\W\d_](?!\S)"
+            patron = r"(?<!\S)(?:[^\W\d_]\s+){3,}[^\W\d_](?!\S)"
 
             parte = re.sub(
                 patron,
                 lambda coincidencia: re.sub(
-                    r"\s+",
-                    "",
-                    coincidencia.group(0),
+                    r"\s+", "", coincidencia.group(0)
                 ),
                 parte,
                 flags=re.UNICODE,
             )
+
+            for patron_correccion, reemplazo in correcciones:
+                parte = re.sub(
+                    patron_correccion,
+                    reemplazo,
+                    parte,
+                    flags=re.IGNORECASE,
+                )
 
             partes_normalizadas.append(parte)
 
@@ -47,7 +59,7 @@ def normalizar_texto_pdf(texto):
 
 
 def extraer_texto_pdf(archivo):
-    """Extrae texto de PDF usando preferentemente su disposición visual."""
+    """Extrae texto de PDF intentando conservar su disposición visual."""
     lector = PdfReader(archivo, strict=False)
     paginas = []
 
@@ -58,15 +70,13 @@ def extraer_texto_pdf(archivo):
             texto = pagina.extract_text() or ""
 
         if texto.strip():
-            paginas.append(
-                normalizar_texto_pdf(texto.strip())
-            )
+            paginas.append(normalizar_texto_pdf(texto.strip()))
 
     return "\n\n".join(paginas)
 
 
 def extraer_texto_docx(archivo):
-    """Extrae párrafos y tablas de un DOCX."""
+    """Extrae párrafos y tablas de un documento Word."""
     documento = Document(archivo)
     textos = []
 
