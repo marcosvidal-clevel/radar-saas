@@ -160,6 +160,41 @@ class DocumentoCandidatoAdmin(
 
     organizacion_lookup = "candidato__organizacion_id"
 
+    actions = ("extraer_texto_cvs",)
+
+    @admin.action(
+        description="Extraer texto de los CV seleccionados",
+        permissions=["change"],
+    )
+    def extraer_texto_cvs(self, request, queryset):
+        if not self.has_change_permission(request):
+            raise PermissionDenied
+
+        seleccionados = self.get_queryset(request).filter(
+            pk__in=queryset.values("pk")
+        ).select_related("candidato__organizacion")
+        omitidos = queryset.count() - seleccionados.count()
+        procesados = sin_texto = errores = 0
+        for documento in seleccionados:
+            if (
+                documento.tipo != DocumentoCandidato.Tipo.CURRICULUM
+                or not self.has_change_permission(request, documento)
+            ):
+                omitidos += 1
+                continue
+            estado = documento.extraer_texto()
+            procesados += 1
+            if estado == DocumentoCandidato.EstadoExtraccion.SIN_TEXTO:
+                sin_texto += 1
+            elif estado == DocumentoCandidato.EstadoExtraccion.ERROR:
+                errores += 1
+
+        self.message_user(
+            request,
+            f"Procesados: {procesados}. Sin texto: {sin_texto}. "
+            f"Con error: {errores}. Omitidos: {omitidos}.",
+        )
+
     list_display = (
         "nombre",
         "candidato",

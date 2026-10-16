@@ -3,11 +3,14 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.contrib import admin
 from django.contrib.auth.models import Permission
+from django.contrib.messages import get_messages
+from django.core.exceptions import PermissionDenied
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
-from django.test import TestCase, TransactionTestCase, override_settings
+from django.test import RequestFactory, TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from docx import Document
 from pypdf import PdfWriter
@@ -463,6 +466,124 @@ class CargaBusquedaCVIntegracionTests(TestCase):
         extraer.assert_not_called()
         documento.refresh_from_db()
         self.assertEqual(documento.estado_extraccion, "pendiente")
+
+
+    def crear_documento_pendiente(self, contenido, extension="pdf", **campos):
+        documento = DocumentoCandidato.objects.create(
+            candidato=campos.pop("candidato", self.candidato),
+            tipo=campos.pop("tipo", DocumentoCandidato.Tipo.CURRICULUM),
+            nombre="Documento sintetico", archivo=SimpleUploadedFile(
+                f"perfil.{extension}", contenido
+            ), **campos,
+        )
+        DocumentoCandidato.objects.filter(pk=documento.pk).update(
+            texto_extraido="Textoanterior", estado_extraccion="pendiente"
+        )
+        documento.refresh_from_db()
+        return documento
+
+    def test_accion_extrae_solo_cvs_seleccionados_y_resume_sin_exponer_contenido(self):
+        pdf = self.crear_documento_pendiente(crear_pdf("Palabrasecreta"))
+        docx = self.crear_documento_pendiente(crear_docx("Palabrasecreta"), "docx")
+        vacio = self.crear_documento_pendiente(crear_pdf_sin_texto())
+        danado = self.crear_documento_pendiente(b"%PDF-1.4\ntruncado sintetico")
+        otro = self.crear_documento_pendiente(
+            crear_pdf("Palabrasecreta"), tipo=DocumentoCandidato.Tipo.OTRO
+        )
+        ajeno = self.crear_documento_pendiente(
+            crear_pdf("Palabrasecreta"), candidato=self.candidato_ajeno
+        )
+        no_seleccionado = self.crear_documento_pendiente(crear_pdf("Palabrasecreta"))
+        seleccionados = [pdf, docx, vacio, danado, otro, ajeno]
+        todos = seleccionados + [no_seleccionado]
+        originales = {}
+        for documento in todos:
+            with documento.archivo.open("rb") as archivo:
+                originales[documento.pk] = (documento.archivo.name, archivo.read())
+        self.client.force_login(self.administrador)
+        respuesta = self.client.post(
+            reverse("admin:talento_documentocandidato_changelist"),
+            {"action": "extraer_texto_cvs", "index": "0",
+             "_selected_action": [documento.pk for documento in seleccionados]},
+        )
+        self.assertEqual(respuesta.status_code, 302)
+        mensajes = " ".join(str(m) for m in get_messages(respuesta.wsgi_request))
+        # Django elimina del queryset de la acción la selección de otra organización.
+        self.assertIn("Procesados: 4. Sin texto: 1. Con error: 1. Omitidos: 1.", mensajes)
+        self.assertNotIn("Palabrasecreta", mensajes)
+        self.assertNotIn("truncado", mensajes)
+        for documento, estado in (
+            (pdf, "extraido"), (docx, "extraido"),
+            (vacio, "sin_texto"), (danado, "error"),
+        ):
+            documento.refresh_from_db()
+            self.assertEqual(documento.estado_extraccion, estado)
+            if estado == "extraido":
+                self.assertIn("Palabrasecreta", documento.texto_extraido)
+            else:
+                self.assertEqual(documento.texto_extraido, "")
+            self.assertNotIn("Textoanterior", documento.texto_extraido)
+        for documento in (otro, ajeno, no_seleccionado):
+            documento.refresh_from_db()
+            self.assertEqual(documento.estado_extraccion, "pendiente")
+            self.assertEqual(documento.texto_extraido, "Textoanterior")
+        for documento in todos:
+            documento.refresh_from_db()
+            self.assertEqual(documento.archivo.name, originales[documento.pk][0])
+            with documento.archivo.open("rb") as archivo:
+                self.assertEqual(archivo.read(), originales[documento.pk][1])
+
+    def test_accion_directa_no_lee_documentos_ajenos(self):
+        documento = self.crear_documento_pendiente(
+            crear_pdf("Sintetico"), candidato=self.candidato_ajeno
+        )
+        request = RequestFactory().post("/admin/")
+        request.user = self.administrador
+        administracion = admin.site._registry[DocumentoCandidato]
+        with patch.object(administracion, "message_user") as mensaje, patch(
+            "talento.models.DocumentoCandidato.extraer_texto"
+        ) as extraer:
+            administracion.extraer_texto_cvs(
+                request, DocumentoCandidato.objects.filter(pk=documento.pk)
+            )
+        extraer.assert_not_called()
+        self.assertIn("Omitidos: 1", mensaje.call_args.args[1])
+        documento.refresh_from_db()
+        self.assertEqual(documento.estado_extraccion, "pendiente")
+
+    def test_accion_sin_permiso_de_cambio_no_procesa(self):
+        documento = self.crear_documento_pendiente(crear_pdf("Sintetico"))
+        self.administrador.user_permissions.remove(Permission.objects.get(
+            content_type__app_label="talento", codename="change_documentocandidato"
+        ))
+        self.client.force_login(self.administrador)
+        with patch("talento.models.DocumentoCandidato.extraer_texto") as extraer:
+            respuesta = self.client.get(reverse("admin:talento_documentocandidato_changelist"))
+            self.assertEqual(respuesta.status_code, 200)
+            self.assertNotContains(respuesta, "Extraer texto de los CV seleccionados")
+            self.client.post(
+                reverse("admin:talento_documentocandidato_changelist"),
+                {"action": "extraer_texto_cvs", "_selected_action": [documento.pk]},
+            )
+        extraer.assert_not_called()
+        documento.refresh_from_db()
+        self.assertEqual(documento.estado_extraccion, "pendiente")
+
+    def test_accion_colaborador_con_permiso_django_no_puede_modificar(self):
+        documento = self.crear_documento_pendiente(crear_pdf("Sintetico"))
+        membresia = Membresia.objects.get(usuario=self.administrador)
+        membresia.rol = Membresia.Rol.COLABORADOR
+        membresia.save()
+        request = RequestFactory().post("/admin/")
+        request.user = self.administrador
+        administracion = admin.site._registry[DocumentoCandidato]
+        with patch("talento.models.DocumentoCandidato.extraer_texto") as extraer:
+            self.assertNotIn("extraer_texto_cvs", administracion.get_actions(request))
+            with self.assertRaises(PermissionDenied):
+                administracion.extraer_texto_cvs(
+                    request, DocumentoCandidato.objects.filter(pk=documento.pk)
+                )
+        extraer.assert_not_called()
 
 
 class MigracionEstadoExtraccionTests(TransactionTestCase):

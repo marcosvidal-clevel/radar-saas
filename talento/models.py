@@ -192,11 +192,6 @@ class DocumentoCandidato(models.Model):
                 })
 
     def save(self, *args, **kwargs):
-        from .extraccion_cv import (
-            extraer_texto_cv,
-            ErrorExtraccionCV,
-        )
-
         self.full_clean()
 
         anterior = None
@@ -240,34 +235,42 @@ class DocumentoCandidato(models.Model):
         resultado = super().save(*args, **kwargs)
 
         if archivo_cambio or tipo_cambio:
-            texto = ""
-            estado = self.EstadoExtraccion.NO_APLICA
-
-            if self.tipo == self.Tipo.CURRICULUM and self.archivo:
-                try:
-                    with self.archivo.open("rb") as archivo:
-                        texto = extraer_texto_cv(
-                            archivo,
-                            self.archivo.name,
-                        )
-                    estado = (
-                        self.EstadoExtraccion.EXTRAIDO
-                        if texto.strip()
-                        else self.EstadoExtraccion.SIN_TEXTO
-                    )
-                except (ErrorExtraccionCV, OSError):
-                    texto = ""
-                    estado = self.EstadoExtraccion.ERROR
-
-            self.texto_extraido = texto
-            self.estado_extraccion = estado
-
-            type(self).objects.filter(pk=self.pk).update(
-                texto_extraido=texto,
-                estado_extraccion=estado,
-            )
+            self.extraer_texto()
 
         return resultado
+
+    def extraer_texto(self):
+        """Actualiza únicamente el texto y su estado, sin guardar el archivo."""
+        from .extraccion_cv import extraer_texto_cv, ErrorExtraccionCV
+
+        self.texto_extraido = ""
+        self.estado_extraccion = self.EstadoExtraccion.PENDIENTE
+        type(self).objects.filter(pk=self.pk).update(
+            texto_extraido="", estado_extraccion=self.estado_extraccion
+        )
+        texto = ""
+        estado = self.EstadoExtraccion.NO_APLICA
+        if self.tipo == self.Tipo.CURRICULUM and self.archivo:
+            try:
+                with self.archivo.open("rb") as archivo:
+                    texto = extraer_texto_cv(
+                        archivo, self.archivo.name
+                    )
+                estado = (
+                    self.EstadoExtraccion.EXTRAIDO
+                    if texto.strip()
+                    else self.EstadoExtraccion.SIN_TEXTO
+                )
+            except (ErrorExtraccionCV, OSError):
+                texto = ""
+                estado = self.EstadoExtraccion.ERROR
+
+        self.texto_extraido = texto
+        self.estado_extraccion = estado
+        type(self).objects.filter(pk=self.pk).update(
+            texto_extraido=texto, estado_extraccion=estado
+        )
+        return estado
 
     def __str__(self):
         return f"{self.candidato.nombre} - {self.nombre}"
