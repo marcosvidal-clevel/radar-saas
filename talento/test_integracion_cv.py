@@ -44,6 +44,14 @@ def crear_docx(texto):
     return salida.getvalue()
 
 
+def crear_pdf_sin_texto():
+    escritor = PdfWriter()
+    escritor.add_blank_page(width=612, height=792)
+    salida = BytesIO()
+    escritor.write(salida)
+    return salida.getvalue()
+
+
 class CargaBusquedaCVIntegracionTests(TestCase):
     @classmethod
     def setUpTestData(cls):
@@ -247,3 +255,121 @@ class CargaBusquedaCVIntegracionTests(TestCase):
             crear_docx,
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         )
+
+    def guardar_documento_http(self, tipo, archivo=None, documento=None):
+        self.client.force_login(self.administrador)
+        datos = {
+            "candidato": self.candidato.pk,
+            "tipo": tipo,
+            "nombre": "Documento sintetico",
+            "vigente": "on",
+            "_save": "Guardar",
+        }
+        if archivo is not None:
+            datos["archivo"] = archivo
+        if documento is None:
+            url = reverse("admin:talento_documentocandidato_add")
+        else:
+            url = reverse(
+                "admin:talento_documentocandidato_change", args=[documento.pk]
+            )
+        respuesta = self.client.post(url, datos)
+        self.assertEqual(respuesta.status_code, 302)
+        guardado = DocumentoCandidato.objects.get(candidato=self.candidato)
+        if documento is not None:
+            self.assertEqual(guardado.pk, documento.pk)
+        self.assertEqual(DocumentoCandidato.objects.count(), 1)
+        self.assertEqual(guardado.tipo, tipo)
+        return guardado
+
+    def comprobar_estado_y_aislamiento(self, documento, palabra, visible, contenido):
+        documento.refresh_from_db()
+        if visible:
+            self.assertIn(palabra, documento.texto_extraido)
+        else:
+            self.assertEqual(documento.texto_extraido, "")
+        self.assertEqual(documento.archivo.storage.location, self.media_root)
+        for usuario, esperados in (
+            (self.administrador, [self.candidato] if visible else []),
+            (self.administrador_ajeno, []),
+        ):
+            self.client.force_login(usuario)
+            respuesta = self.client.get(
+                reverse("admin:talento_candidato_changelist"), {"q": palabra}
+            )
+            self.assertEqual(respuesta.status_code, 200)
+            self.assertEqual(list(respuesta.context["cl"].queryset), esperados)
+            respuesta = self.client.get(reverse(
+                "descargar_documento_candidato", args=[documento.pk]
+            ))
+            self.addCleanup(respuesta.close)
+            if usuario == self.administrador:
+                self.assertEqual(respuesta.status_code, 200)
+                self.assertEqual(b"".join(respuesta.streaming_content), contenido)
+            else:
+                self.assertEqual(respuesta.status_code, 403)
+                self.assertFalse(respuesta.streaming)
+            respuesta.close()
+
+    def comprobar_reemplazo_sin_texto(self, extension, generar, contenido_nuevo):
+        palabra = "Esmeraldacurricular"
+        contenido_anterior = generar(f"Experiencia {palabra}")
+        documento = self.guardar_documento_http(
+            DocumentoCandidato.Tipo.CURRICULUM,
+            SimpleUploadedFile(f"perfil.{extension}", contenido_anterior),
+        )
+        self.comprobar_estado_y_aislamiento(
+            documento, palabra, True, contenido_anterior
+        )
+        documento = self.guardar_documento_http(
+            DocumentoCandidato.Tipo.CURRICULUM,
+            SimpleUploadedFile(f"perfil.{extension}", contenido_nuevo),
+            documento,
+        )
+        self.comprobar_estado_y_aislamiento(
+            documento, palabra, False, contenido_nuevo
+        )
+
+    def test_reemplazo_pdf_danado_borra_texto_y_busqueda(self):
+        self.comprobar_reemplazo_sin_texto(
+            "pdf", crear_pdf, b"%PDF-1.4\narchivo sintetico truncado"
+        )
+
+    def test_reemplazo_docx_danado_borra_texto_y_busqueda(self):
+        self.comprobar_reemplazo_sin_texto(
+            "docx", crear_docx, b"PK\x03\x04archivo sintetico truncado"
+        )
+
+    def test_reemplazo_pdf_sin_texto_borra_texto_y_busqueda(self):
+        self.comprobar_reemplazo_sin_texto(
+            "pdf", crear_pdf, crear_pdf_sin_texto()
+        )
+
+    def comprobar_cambios_tipo(self, extension, generar):
+        palabra = "Topaciocurricular"
+        contenido = generar(f"Experiencia {palabra}")
+        # Un documento de otro tipo no se indexa aunque su archivo contenga texto.
+        documento = self.guardar_documento_http(
+            DocumentoCandidato.Tipo.OTRO,
+            SimpleUploadedFile(f"perfil.{extension}", contenido),
+        )
+        self.comprobar_estado_y_aislamiento(documento, palabra, False, contenido)
+        nombre_archivo = documento.archivo.name
+        for tipo, visible in (
+            (DocumentoCandidato.Tipo.CURRICULUM, True),
+            (DocumentoCandidato.Tipo.OTRO, False),
+            (DocumentoCandidato.Tipo.CURRICULUM, True),
+        ):
+            with self.subTest(tipo=tipo, visible=visible):
+                # Cambiar solo el tipo debe extraer o limpiar el texto persistido.
+                documento = self.guardar_documento_http(tipo, documento=documento)
+                self.assertEqual(documento.archivo.name, nombre_archivo)
+                self.comprobar_estado_y_aislamiento(
+                    documento, palabra, visible, contenido
+                )
+
+    def test_cambios_tipo_pdf_actualizan_texto_y_busqueda(self):
+        self.comprobar_cambios_tipo("pdf", crear_pdf)
+
+    def test_cambios_tipo_docx_actualizan_texto_y_busqueda(self):
+        self.comprobar_cambios_tipo("docx", crear_docx)
