@@ -1,6 +1,9 @@
 
+import re
+
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied
+from django.db.models import Q
 from django.utils.html import format_html
 from django.urls import reverse
 
@@ -47,17 +50,49 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
     )
 
     def get_search_results(self, request, queryset, search_term):
-        queryset, use_distinct = super().get_search_results(
-            request,
-            queryset,
-            search_term,
+        resultados_normales, use_distinct = (
+            super().get_search_results(
+                request,
+                queryset,
+                search_term,
+            )
         )
 
-        if search_term:
-            queryset = queryset.distinct()
-            use_distinct = True
+        if not search_term or not search_term.strip():
+            return resultados_normales, use_distinct
 
-        return queryset, use_distinct
+        # Parte la consulta en términos individuales.
+        terminos = [
+            termino.strip("\"'")
+            for termino in search_term.split()
+            if termino.strip("\"'")
+        ]
+
+        # El queryset recibido ya respeta los permisos
+        # y el aislamiento de organizaciones del administrador.
+        resultados_fragmentados = queryset
+
+        for termino in terminos:
+            # Permite espacios entre letras.
+            # "Proyectos" también puede encontrar "Proye ctos".
+            patron = r"\s*".join(
+                re.escape(caracter)
+                for caracter in termino
+            )
+
+            resultados_fragmentados = (
+                resultados_fragmentados.filter(
+                    documentos__texto_extraido__iregex=patron,
+                    documentos__tipo=DocumentoCandidato.Tipo.CURRICULUM,
+                )
+            )
+
+        resultados = (
+            resultados_normales
+            | resultados_fragmentados
+        ).distinct()
+
+        return resultados, True
 
     readonly_fields = (
         "creado_en",

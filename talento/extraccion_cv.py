@@ -1,4 +1,5 @@
 
+import re
 from pathlib import Path
 
 from pypdf import PdfReader
@@ -9,16 +10,57 @@ class ErrorExtraccionCV(Exception):
     """Error al procesar un currículum."""
 
 
+def normalizar_texto_pdf(texto):
+    """
+    Corrige secuencias largas de letras separadas
+    artificialmente por espacios.
+    """
+    lineas = []
+
+    for linea in texto.split("\n"):
+        partes = re.split(r"(\s{2,})", linea)
+        partes_normalizadas = []
+
+        for parte in partes:
+            if not parte or parte.isspace():
+                partes_normalizadas.append(parte)
+                continue
+
+            patron = r"(?<!\S)(?:[^\W\d_]\s){3,}[^\W\d_](?!\S)"
+
+            parte = re.sub(
+                patron,
+                lambda coincidencia: re.sub(
+                    r"\s+",
+                    "",
+                    coincidencia.group(0),
+                ),
+                parte,
+                flags=re.UNICODE,
+            )
+
+            partes_normalizadas.append(parte)
+
+        lineas.append("".join(partes_normalizadas))
+
+    return "\n".join(lineas)
+
+
 def extraer_texto_pdf(archivo):
-    """Extrae texto seleccionable de un PDF."""
+    """Extrae texto de PDF usando preferentemente su disposición visual."""
     lector = PdfReader(archivo, strict=False)
     paginas = []
 
     for pagina in lector.pages:
-        texto = pagina.extract_text() or ""
+        try:
+            texto = pagina.extract_text(extraction_mode="layout") or ""
+        except (ValueError, TypeError, NotImplementedError):
+            texto = pagina.extract_text() or ""
 
         if texto.strip():
-            paginas.append(texto.strip())
+            paginas.append(
+                normalizar_texto_pdf(texto.strip())
+            )
 
     return "\n\n".join(paginas)
 
