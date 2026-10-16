@@ -3,10 +3,11 @@ from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
 from django.core.exceptions import PermissionDenied
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import RequestFactory, TestCase
 
 from core.models import Membresia, Organizacion
-from .models import Candidato
+from .models import Candidato, DocumentoCandidato
 
 
 class SeguridadCandidatosTests(TestCase):
@@ -76,7 +77,6 @@ class SeguridadCandidatosTests(TestCase):
                 "view_candidato",
             ),
         )
-
         grupo_talento.permissions.add(*permisos_talento)
 
         for usuario in (
@@ -104,9 +104,10 @@ class SeguridadCandidatosTests(TestCase):
         self.factory = RequestFactory()
         self.administracion = admin.site._registry[Candidato]
 
-    def solicitud(self, usuario):
+    def solicitud(self, usuario, consulta=None):
         request = self.factory.get(
-            "/admin/talento/candidato/"
+            "/admin/talento/candidato/",
+            {"q": consulta} if consulta else {},
         )
         request.user = usuario
         return request
@@ -222,8 +223,6 @@ class SeguridadCandidatosTests(TestCase):
         )
         self.assertEqual(respuesta.status_code, 200)
 
-    # Pruebas adicionales de seguridad
-
     def test_colaborador_no_puede_modificar_candidato(self):
         self.assertFalse(
             self.administracion.has_change_permission(
@@ -290,3 +289,87 @@ class SeguridadCandidatosTests(TestCase):
             self.candidato_a.nombre,
             "Candidato Empresa A",
         )
+
+
+class BusquedaContenidoCVTests(SeguridadCandidatosTests):
+
+    def crear_cv(self, candidato, texto):
+        documento = DocumentoCandidato.objects.create(
+            candidato=candidato,
+            tipo=DocumentoCandidato.Tipo.CURRICULUM,
+            nombre=f"CV de {candidato.nombre}",
+            archivo=SimpleUploadedFile(
+                f"cv-{candidato.pk}.pdf",
+                b"archivo de prueba",
+                content_type="application/pdf",
+            ),
+        )
+
+        DocumentoCandidato.objects.filter(
+            pk=documento.pk
+        ).update(texto_extraido=texto)
+
+        return documento
+
+    def buscar(self, termino, usuario=None):
+        usuario = usuario or self.administrador
+        request = self.solicitud(usuario, termino)
+        queryset = self.administracion.get_queryset(request)
+
+        resultados, _ = self.administracion.get_search_results(
+            request,
+            queryset,
+            termino,
+        )
+
+        return list(resultados.values_list("nombre", flat=True).distinct())
+
+    def test_busqueda_encuentra_palabra_fragmentada_en_cv(self):
+        self.crear_cv(
+            self.candidato_a,
+            "Subgerente de Proye ctos y licitaciones viales",
+        )
+
+        resultados = self.buscar("Proyectos")
+
+        self.assertIn("Candidato Empresa A", resultados)
+
+    def test_busqueda_encuentra_licitaciones_fragmentadas(self):
+        self.crear_cv(
+            self.candidato_a,
+            "Jefe de Licita ciones y concesiones viales",
+        )
+
+        resultados = self.buscar("Licitaciones")
+
+        self.assertIn("Candidato Empresa A", resultados)
+
+    def test_busqueda_encuentra_terminos_profesionales(self):
+        self.crear_cv(
+            self.candidato_a,
+            "Ingeniero Civil en Obras Civiles con experiencia CAPEX",
+        )
+
+        resultados = self.buscar("CAPEX")
+
+        self.assertIn("Candidato Empresa A", resultados)
+
+    def test_busqueda_no_expone_cv_de_otra_organizacion(self):
+        self.crear_cv(
+            self.candidato_b,
+            "Subgerente de Proyectos y Licitaciones CAPEX",
+        )
+
+        resultados = self.buscar("Licitaciones")
+
+        self.assertNotIn("Candidato Empresa B", resultados)
+
+    def test_busqueda_normal_sigue_funcionando(self):
+        resultados = self.buscar("Candidato Empresa A")
+
+        self.assertIn("Candidato Empresa A", resultados)
+
+    def test_busqueda_sin_coincidencias_no_devuelve_candidatos(self):
+        resultados = self.buscar("terminoquenoexiste987654")
+
+        self.assertEqual(resultados, [])
