@@ -64,6 +64,9 @@ def extraer_texto_pdf(archivo):
     paginas = []
 
     for pagina in lector.pages:
+        # Las páginas en blanco pueden omitir /Contents en un PDF válido.
+        if pagina.get_contents() is None:
+            continue
         try:
             texto = pagina.extract_text(extraction_mode="layout") or ""
         except (ValueError, TypeError, NotImplementedError):

@@ -1,10 +1,13 @@
 from io import BytesIO
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase, override_settings
+from django.db import connection
+from django.db.migrations.executor import MigrationExecutor
+from django.test import TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from docx import Document
 from pypdf import PdfWriter
@@ -134,6 +137,9 @@ class CargaBusquedaCVIntegracionTests(TestCase):
         self.assertEqual(respuesta.status_code, 302)
         documento = DocumentoCandidato.objects.get(candidato=self.candidato)
         self.assertIn(palabra, documento.texto_extraido)
+        self.assertEqual(
+            documento.estado_extraccion, DocumentoCandidato.EstadoExtraccion.EXTRAIDO
+        )
         self.assertEqual(documento.archivo.storage.location, self.media_root)
         self.assertTrue(documento.archivo.storage.exists(documento.archivo.name))
 
@@ -229,6 +235,9 @@ class CargaBusquedaCVIntegracionTests(TestCase):
         documento.refresh_from_db()
         self.assertEqual(DocumentoCandidato.objects.count(), 1)
         self.assertIn(nueva, documento.texto_extraido)
+        self.assertEqual(
+            documento.estado_extraccion, DocumentoCandidato.EstadoExtraccion.EXTRAIDO
+        )
         self.assertNotIn(anterior, documento.texto_extraido)
         comprobar_busqueda(nueva, [self.candidato])
         comprobar_busqueda(anterior, [])
@@ -286,6 +295,10 @@ class CargaBusquedaCVIntegracionTests(TestCase):
         documento.refresh_from_db()
         if visible:
             self.assertIn(palabra, documento.texto_extraido)
+            self.assertEqual(
+                documento.estado_extraccion,
+                DocumentoCandidato.EstadoExtraccion.EXTRAIDO,
+            )
         else:
             self.assertEqual(documento.texto_extraido, "")
         self.assertEqual(documento.archivo.storage.location, self.media_root)
@@ -311,7 +324,9 @@ class CargaBusquedaCVIntegracionTests(TestCase):
                 self.assertFalse(respuesta.streaming)
             respuesta.close()
 
-    def comprobar_reemplazo_sin_texto(self, extension, generar, contenido_nuevo):
+    def comprobar_reemplazo_sin_texto(
+        self, extension, generar, contenido_nuevo, estado_esperado
+    ):
         palabra = "Esmeraldacurricular"
         contenido_anterior = generar(f"Experiencia {palabra}")
         documento = self.guardar_documento_http(
@@ -329,20 +344,24 @@ class CargaBusquedaCVIntegracionTests(TestCase):
         self.comprobar_estado_y_aislamiento(
             documento, palabra, False, contenido_nuevo
         )
+        self.assertEqual(documento.estado_extraccion, estado_esperado)
 
     def test_reemplazo_pdf_danado_borra_texto_y_busqueda(self):
         self.comprobar_reemplazo_sin_texto(
-            "pdf", crear_pdf, b"%PDF-1.4\narchivo sintetico truncado"
+            "pdf", crear_pdf, b"%PDF-1.4\narchivo sintetico truncado",
+            DocumentoCandidato.EstadoExtraccion.ERROR,
         )
 
     def test_reemplazo_docx_danado_borra_texto_y_busqueda(self):
         self.comprobar_reemplazo_sin_texto(
-            "docx", crear_docx, b"PK\x03\x04archivo sintetico truncado"
+            "docx", crear_docx, b"PK\x03\x04archivo sintetico truncado",
+            DocumentoCandidato.EstadoExtraccion.ERROR,
         )
 
     def test_reemplazo_pdf_sin_texto_borra_texto_y_busqueda(self):
         self.comprobar_reemplazo_sin_texto(
-            "pdf", crear_pdf, crear_pdf_sin_texto()
+            "pdf", crear_pdf, crear_pdf_sin_texto(),
+            DocumentoCandidato.EstadoExtraccion.SIN_TEXTO,
         )
 
     def comprobar_cambios_tipo(self, extension, generar):
@@ -354,6 +373,9 @@ class CargaBusquedaCVIntegracionTests(TestCase):
             SimpleUploadedFile(f"perfil.{extension}", contenido),
         )
         self.comprobar_estado_y_aislamiento(documento, palabra, False, contenido)
+        self.assertEqual(
+            documento.estado_extraccion, DocumentoCandidato.EstadoExtraccion.NO_APLICA
+        )
         nombre_archivo = documento.archivo.name
         for tipo, visible in (
             (DocumentoCandidato.Tipo.CURRICULUM, True),
@@ -367,9 +389,114 @@ class CargaBusquedaCVIntegracionTests(TestCase):
                 self.comprobar_estado_y_aislamiento(
                     documento, palabra, visible, contenido
                 )
+                if not visible:
+                    self.assertEqual(
+                        documento.estado_extraccion,
+                        DocumentoCandidato.EstadoExtraccion.NO_APLICA,
+                    )
 
     def test_cambios_tipo_pdf_actualizan_texto_y_busqueda(self):
         self.comprobar_cambios_tipo("pdf", crear_pdf)
 
     def test_cambios_tipo_docx_actualizan_texto_y_busqueda(self):
         self.comprobar_cambios_tipo("docx", crear_docx)
+
+    def test_estado_visible_solo_lectura_y_filtro_aislado(self):
+        documento = self.guardar_documento_http(
+            DocumentoCandidato.Tipo.CURRICULUM,
+            SimpleUploadedFile("perfil.pdf", crear_pdf("Perfil sintetico")),
+        )
+        url = reverse("admin:talento_documentocandidato_changelist")
+        for usuario, esperados in (
+            (self.administrador, [documento]),
+            (self.administrador_ajeno, []),
+        ):
+            self.client.force_login(usuario)
+            respuesta = self.client.get(url, {"estado_extraccion__exact": "extraido"})
+            self.assertEqual(respuesta.status_code, 200)
+            self.assertEqual(list(respuesta.context["cl"].queryset), esperados)
+            self.assertContains(respuesta, "Texto extraído")
+            self.assertContains(respuesta, "Estado de extracción de texto")
+        self.client.force_login(self.administrador)
+        respuesta = self.client.get(reverse(
+            "admin:talento_documentocandidato_change", args=[documento.pk]
+        ))
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(respuesta, "Texto extraído")
+        self.assertNotIn("estado_extraccion", respuesta.context["adminform"].form.fields)
+        respuesta = self.client.get(url, {"estado_extraccion__exact": "error"})
+        self.assertEqual(list(respuesta.context["cl"].queryset), [])
+
+    def test_error_de_almacenamiento_limpia_texto_sin_exponer_excepcion(self):
+        documento = self.guardar_documento_http(
+            DocumentoCandidato.Tipo.CURRICULUM,
+            SimpleUploadedFile("perfil.pdf", crear_pdf("Palabraanterior")),
+        )
+        with patch(
+            "django.core.files.storage.FileSystemStorage.open",
+            side_effect=OSError("detalle tecnico privado"),
+        ):
+            documento.archivo = SimpleUploadedFile("nuevo.pdf", crear_pdf("Nuevo"))
+            documento.save(update_fields=["archivo"])
+        documento.refresh_from_db()
+        self.assertEqual(documento.texto_extraido, "")
+        self.assertEqual(documento.estado_extraccion, "error")
+        self.client.force_login(self.administrador)
+        respuesta = self.client.get(reverse(
+            "admin:talento_documentocandidato_change", args=[documento.pk]
+        ))
+        self.assertContains(respuesta, "Error de lectura")
+        self.assertNotContains(respuesta, "detalle tecnico privado")
+
+    def test_edicion_de_metadatos_no_reprocesa_documento_pendiente(self):
+        documento = self.guardar_documento_http(
+            DocumentoCandidato.Tipo.CURRICULUM,
+            SimpleUploadedFile("perfil.pdf", crear_pdf("Sintetico")),
+        )
+        DocumentoCandidato.objects.filter(pk=documento.pk).update(
+            estado_extraccion="pendiente", texto_extraido=""
+        )
+        documento.refresh_from_db()
+        with patch("talento.extraccion_cv.extraer_texto_cv") as extraer:
+            documento.nombre = "Nombre actualizado"
+            documento.save(update_fields=["nombre"])
+        extraer.assert_not_called()
+        documento.refresh_from_db()
+        self.assertEqual(documento.estado_extraccion, "pendiente")
+
+
+class MigracionEstadoExtraccionTests(TransactionTestCase):
+    def test_documentos_anteriores_quedan_pendientes_sin_abrir_archivos(self):
+        anterior = [("talento", "0005_documentocandidato_texto_extraido")]
+        nueva = [("talento", "0006_documentocandidato_estado_extraccion")]
+        ejecutor = MigrationExecutor(connection)
+        ejecutor.migrate(anterior)
+        try:
+            apps = ejecutor.loader.project_state(anterior).apps
+            organizacion = apps.get_model("core", "Organizacion").objects.create(
+                nombre="Organizacion migracion", slug="migracion-sintetica"
+            )
+            candidato = apps.get_model("talento", "Candidato").objects.create(
+                organizacion=organizacion, nombre="Perfil migracion"
+            )
+            modelo = apps.get_model("talento", "DocumentoCandidato")
+            for tipo, texto in (("curriculum", ""), ("curriculum", "Texto sintetico"),
+                                ("otro", "")):
+                modelo.objects.create(
+                    candidato=candidato, tipo=tipo, nombre="Documento sintetico",
+                    archivo="sintetico-inexistente.pdf", texto_extraido=texto,
+                )
+            with patch(
+                "django.core.files.storage.FileSystemStorage.open",
+                side_effect=AssertionError("La migracion no debe abrir archivos"),
+            ):
+                MigrationExecutor(connection).migrate(nueva)
+            self.assertEqual(
+                list(DocumentoCandidato.objects.values_list("estado_extraccion", flat=True)),
+                ["pendiente"] * 3,
+            )
+            self.assertTrue(DocumentoCandidato.objects.filter(
+                texto_extraido="Texto sintetico"
+            ).exists())
+        finally:
+            MigrationExecutor(connection).migrate(nueva)

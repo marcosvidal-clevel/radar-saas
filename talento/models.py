@@ -109,6 +109,13 @@ def ruta_documento_candidato(instance, filename):
 
 class DocumentoCandidato(models.Model):
 
+    class EstadoExtraccion(models.TextChoices):
+        PENDIENTE = "pendiente", "Pendiente"
+        EXTRAIDO = "extraido", "Texto extraído"
+        SIN_TEXTO = "sin_texto", "Sin texto"
+        ERROR = "error", "Error de lectura"
+        NO_APLICA = "no_aplica", "No aplica"
+
     class Tipo(models.TextChoices):
         CURRICULUM = "curriculum", "Currículum"
         TITULO = "titulo", "Título académico"
@@ -149,6 +156,14 @@ class DocumentoCandidato(models.Model):
 
     texto_extraido = models.TextField(
         blank=True,
+        editable=False,
+    )
+
+    estado_extraccion = models.CharField(
+        "Estado de extracción de texto",
+        max_length=20,
+        choices=EstadoExtraccion.choices,
+        default=EstadoExtraccion.PENDIENTE,
         editable=False,
     )
 
@@ -213,10 +228,20 @@ class DocumentoCandidato(models.Model):
                 tipo_cambio and "tipo" in campos
             )
 
+        if archivo_cambio or tipo_cambio:
+            # Persistir el estado inicial sin texto anterior antes de leer el archivo.
+            self.texto_extraido = ""
+            self.estado_extraccion = self.EstadoExtraccion.PENDIENTE
+            if update_fields is not None:
+                kwargs["update_fields"] = set(update_fields) | {
+                    "texto_extraido", "estado_extraccion",
+                }
+
         resultado = super().save(*args, **kwargs)
 
         if archivo_cambio or tipo_cambio:
             texto = ""
+            estado = self.EstadoExtraccion.NO_APLICA
 
             if self.tipo == self.Tipo.CURRICULUM and self.archivo:
                 try:
@@ -225,13 +250,21 @@ class DocumentoCandidato(models.Model):
                             archivo,
                             self.archivo.name,
                         )
+                    estado = (
+                        self.EstadoExtraccion.EXTRAIDO
+                        if texto.strip()
+                        else self.EstadoExtraccion.SIN_TEXTO
+                    )
                 except (ErrorExtraccionCV, OSError):
                     texto = ""
+                    estado = self.EstadoExtraccion.ERROR
 
             self.texto_extraido = texto
+            self.estado_extraccion = estado
 
             type(self).objects.filter(pk=self.pk).update(
-                texto_extraido=texto
+                texto_extraido=texto,
+                estado_extraccion=estado,
             )
 
         return resultado

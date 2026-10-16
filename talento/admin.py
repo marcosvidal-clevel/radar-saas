@@ -164,6 +164,7 @@ class DocumentoCandidatoAdmin(
         "nombre",
         "candidato",
         "tipo",
+        "estado_extraccion",
         "vigente",
         "es_cv_principal",
         "enlace_descarga",
@@ -172,6 +173,7 @@ class DocumentoCandidatoAdmin(
 
     list_filter = (
         "tipo",
+        "estado_extraccion",
         "vigente",
         "es_cv_principal",
     )
@@ -186,6 +188,7 @@ class DocumentoCandidatoAdmin(
         "creado_en",
         "actualizado_en",
         "enlace_descarga",
+        "estado_extraccion",
     )
 
     list_select_related = (
@@ -199,6 +202,7 @@ class DocumentoCandidatoAdmin(
         "nombre",
         "archivo",
         "enlace_descarga",
+        "estado_extraccion",
         "es_cv_principal",
         "vigente",
         "observaciones",
