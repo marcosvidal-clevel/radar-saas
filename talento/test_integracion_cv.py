@@ -152,10 +152,11 @@ class CargaBusquedaCVIntegracionTests(TestCase):
 
         url_descarga = reverse("descargar_documento_candidato", args=[documento.pk])
         respuesta = self.client.get(url_descarga)
-        self.addCleanup(respuesta.close)
         self.assertEqual(respuesta.status_code, 200)
         self.assertEqual(b"".join(respuesta.streaming_content), contenido)
-        respuesta.close()
+        # El cliente cierra la respuesta al agotar el stream. Cerrarla otra vez
+        # emite request_finished y cierra la conexión de la transacción del test.
+        self.assertTrue(respuesta.closed)
 
         # El usuario ajeno tiene permisos: la restricción es por organización.
         self.client.force_login(self.administrador_ajeno)
@@ -246,10 +247,9 @@ class CargaBusquedaCVIntegracionTests(TestCase):
         comprobar_busqueda(anterior, [])
 
         respuesta = self.client.get(url_descarga)
-        self.addCleanup(respuesta.close)
         self.assertEqual(respuesta.status_code, 200)
         self.assertEqual(b"".join(respuesta.streaming_content), contenido_nuevo)
-        respuesta.close()
+        self.assertTrue(respuesta.closed)
 
         self.client.force_login(self.administrador_ajeno)
         comprobar_busqueda(nueva, [])
@@ -318,14 +318,13 @@ class CargaBusquedaCVIntegracionTests(TestCase):
             respuesta = self.client.get(reverse(
                 "descargar_documento_candidato", args=[documento.pk]
             ))
-            self.addCleanup(respuesta.close)
             if usuario == self.administrador:
                 self.assertEqual(respuesta.status_code, 200)
                 self.assertEqual(b"".join(respuesta.streaming_content), contenido)
             else:
                 self.assertEqual(respuesta.status_code, 403)
                 self.assertFalse(respuesta.streaming)
-            respuesta.close()
+            self.assertTrue(respuesta.closed)
 
     def comprobar_reemplazo_sin_texto(
         self, extension, generar, contenido_nuevo, estado_esperado
