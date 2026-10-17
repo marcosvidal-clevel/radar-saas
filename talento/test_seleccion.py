@@ -1,6 +1,6 @@
 from tempfile import TemporaryDirectory
 from io import BytesIO
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
@@ -435,3 +435,66 @@ class SeleccionVistasTests(TestCase):
         self.org_b.save(update_fields=("activa",))
         self.client.force_login(self.ajeno)
         self.assertEqual(self.client.get(reverse("seleccion_agenda_entrevistas")).status_code, 403)
+
+    def test_inicio_muestra_indicadores_y_ceros_con_datos_autorizados(self):
+        self.vacante.estado = Vacante.Estado.ABIERTA
+        self.vacante.save(update_fields=("estado",))
+        postulacion = Postulacion.objects.create(vacante=self.vacante, candidato=self.candidato)
+        entrevista = Entrevista.objects.create(
+            postulacion=postulacion,
+            creado_por=self.usuario,
+            fecha_hora=datetime.now(timezone.utc) + timedelta(days=1),
+            entrevistador="A",
+            modalidad=Entrevista.Modalidad.VIDEOLLAMADA,
+            estado=Entrevista.Estado.PROGRAMADA,
+        )
+        self.client.force_login(self.usuario)
+        respuesta = self.client.get(reverse("seleccion_inicio"))
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(respuesta, self.vacante.titulo)
+        self.assertContains(respuesta, "Próximas entrevistas")
+        self.assertContains(respuesta, "Recibida")
+        self.assertContains(respuesta, "Entrevista")
+        self.assertContains(respuesta, "No hay resultados pendientes")
+        self.assertEqual(list(respuesta.context["entrevistas_programadas"]), [entrevista])
+
+    def test_inicio_limita_vacantes_y_entrevistas_a_diez_y_ordena(self):
+        postulacion = Postulacion.objects.create(vacante=self.vacante, candidato=self.candidato)
+        vacantes = [self.vacante]
+        for indice in range(11):
+            vacantes.append(Vacante.objects.create(organizacion=self.org_a, titulo=f"Vacante abierta {indice}", estado=Vacante.Estado.ABIERTA))
+        self.vacante.estado = Vacante.Estado.ABIERTA
+        self.vacante.save(update_fields=("estado",))
+        for indice, vacante in enumerate(vacantes):
+            candidato = self.candidato if indice == 0 else Candidato.objects.create(organizacion=self.org_a, nombre=f"Candidato {indice}")
+            postulacion_actual = postulacion if indice == 0 else Postulacion.objects.create(vacante=vacante, candidato=candidato)
+            Entrevista.objects.create(
+                postulacion=postulacion_actual,
+                creado_por=self.usuario,
+                fecha_hora=datetime.now(timezone.utc) + timedelta(days=indice + 1),
+                entrevistador="A",
+                modalidad=Entrevista.Modalidad.VIDEOLLAMADA,
+            )
+        self.client.force_login(self.usuario)
+        respuesta = self.client.get(reverse("seleccion_inicio"))
+        self.assertEqual(len(respuesta.context["vacantes_abiertas"]), 10)
+        self.assertEqual(len(respuesta.context["entrevistas_programadas"]), 10)
+        self.assertLessEqual(
+            respuesta.context["entrevistas_programadas"][0].fecha_hora,
+            respuesta.context["entrevistas_programadas"][-1].fecha_hora,
+        )
+
+    def test_inicio_oculta_secciones_sin_permiso_y_bloquea_sin_acceso(self):
+        self.usuario.user_permissions.remove(Permission.objects.get(content_type__app_label="talento", codename="view_vacante"))
+        self.client.force_login(self.usuario)
+        respuesta = self.client.get(reverse("seleccion_inicio"))
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertNotContains(respuesta, "Vacantes abiertas")
+        self.usuario.user_permissions.remove(*Permission.objects.filter(content_type__app_label="talento"))
+        self.assertEqual(self.client.get(reverse("seleccion_inicio")).status_code, 403)
+
+    def test_inicio_rechaza_organizacion_inactiva(self):
+        self.org_a.activa = False
+        self.org_a.save(update_fields=("activa",))
+        self.client.force_login(self.usuario)
+        self.assertEqual(self.client.get(reverse("seleccion_inicio")).status_code, 403)

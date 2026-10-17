@@ -8,11 +8,12 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import FileResponse, Http404
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.db import IntegrityError
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods
 
 from core.models import Membresia, Organizacion
@@ -439,6 +440,91 @@ def _candidatos_postulables(request, vacante):
     return administrador.get_queryset(request).filter(
         organizacion_id=vacante.organizacion_id,
     )
+
+
+@login_required(login_url="admin:login")
+@require_GET
+def inicio_seleccion(request):
+    administrador_vacantes = _administrador_seleccion(Vacante)
+    administrador_postulaciones = _administrador_seleccion(Postulacion)
+    administrador_entrevistas = _administrador_seleccion(Entrevista)
+
+    puede_ver_vacantes = (
+        request.user.has_perm("talento.view_vacante")
+        and administrador_vacantes.has_view_permission(request)
+    )
+    puede_ver_postulaciones = (
+        request.user.has_perm("talento.view_postulacion")
+        and administrador_postulaciones.has_view_permission(request)
+    )
+    puede_ver_entrevistas = (
+        request.user.has_perm("talento.view_entrevista")
+        and administrador_entrevistas.has_view_permission(request)
+    )
+    if not (puede_ver_vacantes or puede_ver_postulaciones or puede_ver_entrevistas):
+        raise PermissionDenied("No tienes acceso a Selección.")
+
+    vacantes_abiertas = []
+    if puede_ver_vacantes:
+        vacantes_abiertas = list(
+            administrador_vacantes.get_queryset(request)
+            .filter(estado=Vacante.Estado.ABIERTA, activa=True)
+            .select_related("organizacion")
+            .order_by("-creada_en", "-pk")[:10]
+        )
+
+    conteos_postulaciones = {}
+    if puede_ver_postulaciones:
+        conteos_postulaciones = {
+            fila["estado"]: fila["total"]
+            for fila in administrador_postulaciones.get_queryset(request)
+            .values("estado")
+            .annotate(total=Count("pk"))
+        }
+    resumen_etapas = [
+        {"valor": valor, "etiqueta": etiqueta, "total": conteos_postulaciones.get(valor, 0)}
+        for valor, etiqueta in Postulacion.Estado.choices
+    ]
+
+    entrevistas_programadas = []
+    entrevistas_pendientes = []
+    if puede_ver_entrevistas:
+        entrevistas_autorizadas = administrador_entrevistas.get_queryset(request).select_related(
+            "postulacion__candidato", "postulacion__vacante",
+        )
+        ahora = timezone.now()
+        entrevistas_programadas = list(
+            entrevistas_autorizadas
+            .filter(estado=Entrevista.Estado.PROGRAMADA, fecha_hora__gte=ahora)
+            .order_by("fecha_hora", "pk")[:10]
+        )
+        entrevistas_pendientes = list(
+            entrevistas_autorizadas
+            .filter(estado=Entrevista.Estado.REALIZADA)
+            .filter(
+                Q(resultado__isnull=True)
+                | Q(resultado="")
+                | Q(resultado__regex=r"^\s*$")
+                | Q(recomendacion__isnull=True)
+                | Q(recomendacion="")
+                | ~Q(recomendacion__in=(
+                    Entrevista.Recomendacion.CONTINUAR,
+                    Entrevista.Recomendacion.NO_CONTINUAR,
+                    Entrevista.Recomendacion.RESERVA,
+                ))
+            )
+            .order_by("-fecha_hora", "-pk")[:10]
+        )
+
+    return render(request, "talento/inicio_seleccion.html", {
+        "puede_ver_vacantes": puede_ver_vacantes,
+        "puede_ver_postulaciones": puede_ver_postulaciones,
+        "puede_ver_entrevistas": puede_ver_entrevistas,
+        "vacantes_abiertas": vacantes_abiertas,
+        "resumen_etapas": resumen_etapas,
+        "entrevistas_programadas": entrevistas_programadas,
+        "entrevistas_pendientes": entrevistas_pendientes,
+    })
 
 
 @login_required(login_url="admin:login")
