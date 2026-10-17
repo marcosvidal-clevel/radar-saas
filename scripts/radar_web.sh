@@ -37,7 +37,7 @@ pid_matches() {
 }
 
 http_ready() {
-  curl -fsS -o /dev/null --max-time 1 "http://127.0.0.1:$PORT/" 2>/dev/null
+  curl -sS -o /dev/null --max-time 1 "http://127.0.0.1:$PORT/" 2>/dev/null
 }
 
 status() {
