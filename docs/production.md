@@ -27,13 +27,47 @@ El desarrollo local continúa usando `config.settings`. Producción usa
 
 ## Backups y restauración
 
-El repositorio no automatiza backups. El proveedor debe respaldar PostgreSQL y
-el contenido de `RADAR_MEDIA_ROOT` con cifrado, retención y pruebas periódicas.
+`scripts/radar_backup.py` prepara un respaldo manual conjunto de PostgreSQL y
+`RADAR_MEDIA_ROOT`. Es una herramienta, no un servicio programado: no elimina
+respaldos ni configura almacenamiento externo. El destino debe estar fuera del
+repositorio y se crea con permisos restrictivos (`0700` para directorios,
+`0600` para archivos). Nunca se copian `.env`, credenciales o secretos.
 
-- PostgreSQL: restaurar un dump en una instancia aislada, verificar migraciones
-  y ejecutar `manage.py check --deploy` antes de cambiar tráfico.
-- Documentos: restaurar el volumen privado conservando nombres y permisos;
-  comprobar descargas con un usuario autorizado y rechazo de otra organización.
+Para coherencia entre relaciones y documentos, pausa las escrituras de RADAR
+(modo mantenimiento o detén el proceso de aplicación), espera a que terminen
+las transacciones en curso y ejecuta ambos pasos en la misma pausa:
+
+```bash
+export RADAR_DB_NAME=radar_production
+export RADAR_DB_USER=radar_app
+export RADAR_DB_PASSWORD='(secreto del proveedor, no lo escribas en logs)'
+export RADAR_DB_HOST=postgres.internal.example.test
+export RADAR_DB_PORT=5432
+./.venv/bin/python scripts/radar_backup.py backup \
+  --destination /var/backups/radar/2026-10-17T120000Z \
+  --media-root "$RADAR_MEDIA_ROOT" \
+  --schema-version "talento.0011_entrevista_recomendacion_entrevista_resultado"
+```
+
+El manifiesto contiene versión, fecha UTC, versión del esquema, rutas relativas,
+tamaños y SHA-256 del dump y cada documento. La herramienta rechaza archivos
+ausentes, symlinks, rutas fuera de `MEDIA_ROOT`, destinos dentro del repositorio
+y errores de `pg_dump`.
+
+La restauración exige una base nueva y un directorio nuevo y vacío; valida el
+manifiesto y las sumas antes de crear la base:
+
+```bash
+./.venv/bin/python scripts/radar_backup.py restore \
+  --backup /var/backups/radar/2026-10-17T120000Z \
+  --database radar_restore_20261017 \
+  --media-root /var/lib/radar/restore-20261017
+```
+
+No se sobrescriben destinos existentes, no se siguen symlinks y no se eliminan
+respaldos automáticamente. Después de restaurar, valida migraciones, relaciones,
+descargas autorizadas y acceso cruzado entre organizaciones antes de promover
+la instancia restaurada.
 
 Los logs deben ir al stdout/stderr del proceso y a la plataforma del proveedor;
 la configuración incluida no registra contraseñas ni contenido de documentos.
