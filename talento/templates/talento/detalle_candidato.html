@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="es-CL">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ candidato.nombre }} | Talento | RADAR</title>
+  <style>
+    :root { color-scheme:light; --fondo:#f3f5f8; --texto:#182b3a; --secundario:#526474; --borde:#dce3ea; --azul:#164b63; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--fondo); color:var(--texto); font-family:Arial,sans-serif; line-height:1.5; }
+    a { color:var(--azul); }
+    .barra { background:#142f40; color:white; padding:18px 28px; display:flex; justify-content:space-between; gap:18px; flex-wrap:wrap; }
+    .marca { font-size:24px; letter-spacing:3px; font-weight:bold; }
+    .barra a { color:white; }
+    .usuario { font-size:14px; }
+    main { max-width:1100px; margin:auto; padding:32px 24px; }
+    .volver { display:inline-block; margin-bottom:20px; }
+    h1 { margin:0 0 6px; font-size:30px; } h2 { margin-top:0; font-size:21px; }
+    .subtitulo { color:var(--secundario); margin-top:0; }
+    .rejilla { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
+    .tarjeta { background:white; border:1px solid var(--borde); border-radius:12px; padding:24px; }
+    .completo { grid-column:1 / -1; }
+    dt { color:var(--secundario); font-size:14px; } dd { margin:4px 0 18px; overflow-wrap:anywhere; } dd:last-child { margin-bottom:0; }
+    .documento { display:flex; justify-content:space-between; gap:16px; border-top:1px solid var(--borde); padding:14px 0; }
+    .documento:first-of-type { border-top:0; padding-top:0; }
+    .boton { display:inline-block; background:var(--azul); color:white; border-radius:8px; padding:9px 14px; text-decoration:none; white-space:nowrap; }
+    .vacio { color:var(--secundario); }
+    @media (max-width:700px) { main { padding:24px 14px; } .barra { padding:16px; } .rejilla { grid-template-columns:1fr; } .completo { grid-column:auto; } .documento { align-items:flex-start; flex-direction:column; } }
+  </style>
+</head>
+<body>
+  <header class="barra">
+    <div class="marca">RADAR</div>
+    <nav class="usuario" aria-label="Navegación principal">
+      {{ request.user.username }} ·
+      <a href="{% url 'talento_candidatos' %}">Talento</a> ·
+      <a href="{% url 'panel_comercial' %}">Panel comercial</a> ·
+      <a href="{% url 'admin:index' %}">Administración</a>
+    </nav>
+  </header>
+  <main>
+    <a class="volver" href="{% url 'talento_candidatos' %}">← Volver a candidatos</a>
+    <h1>{{ candidato.nombre }}</h1>
+    <p class="subtitulo">{{ candidato.organizacion.nombre }}</p>
+    <div class="rejilla">
+      <section class="tarjeta"><h2>Contacto</h2><dl>
+        <dt>Correo</dt><dd>{{ candidato.email|default:"—" }}</dd>
+        <dt>Teléfono</dt><dd>{{ candidato.telefono|default:"—" }}</dd>
+        <dt>LinkedIn</dt><dd>{% if candidato.linkedin %}<a href="{{ candidato.linkedin }}">{{ candidato.linkedin }}</a>{% else %}—{% endif %}</dd>
+      </dl></section>
+      <section class="tarjeta"><h2>Perfil profesional</h2><dl>
+        <dt>Profesión</dt><dd>{{ candidato.profesion|default:"—" }}</dd>
+        <dt>Especialidad</dt><dd>{{ candidato.especialidad|default:"—" }}</dd>
+        <dt>Experiencia</dt><dd>{{ candidato.anos_experiencia|default:"—" }}{% if candidato.anos_experiencia %} años{% endif %}</dd>
+        <dt>Ubicación</dt><dd>{{ candidato.ciudad|default:candidato.region|default:"—" }}</dd>
+      </dl></section>
+      <section class="tarjeta completo"><h2>Experiencia y competencias</h2>
+        <dl><dt>Experiencia</dt><dd>{{ candidato.experiencia|linebreaksbr|default:"—" }}</dd><dt>Competencias</dt><dd>{{ candidato.competencias|linebreaksbr|default:"—" }}</dd></dl>
+      </section>
+      <section class="tarjeta completo"><h2>Documentos consultables</h2>
+        {% for documento in documentos %}<div class="documento"><span>{{ documento.nombre }} · {{ documento.get_tipo_display }}</span><a class="boton" href="{% url 'descargar_documento_candidato' documento.pk %}">Descargar</a></div>{% empty %}<p class="vacio">No hay documentos disponibles para tu nivel de acceso.</p>{% endfor %}
+      </section>
+    </div>
+  </main>
+</body>
+</html>

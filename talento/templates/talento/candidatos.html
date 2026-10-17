@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="es-CL">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Talento | RADAR</title>
+  <style>
+    :root { color-scheme: light; --fondo:#f3f5f8; --texto:#182b3a; --secundario:#526474; --borde:#dce3ea; --azul:#164b63; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--fondo); color:var(--texto); font-family:Arial,sans-serif; line-height:1.5; }
+    a { color:var(--azul); }
+    .barra { background:#142f40; color:white; padding:18px 28px; display:flex; justify-content:space-between; gap:18px; flex-wrap:wrap; }
+    .marca { font-size:24px; letter-spacing:3px; font-weight:bold; }
+    .barra a { color:white; }
+    .usuario { font-size:14px; }
+    main { max-width:1100px; margin:auto; padding:32px 24px; }
+    h1 { margin:0 0 6px; font-size:30px; }
+    .subtitulo { margin:0 0 24px; color:var(--secundario); }
+    .filtros, .seccion { background:white; border:1px solid var(--borde); border-radius:12px; padding:20px 22px; margin-bottom:24px; }
+    .filtros form { display:flex; gap:10px; flex-wrap:wrap; }
+    input { flex:1 1 400px; min-height:44px; padding:10px; border:1px solid #aab8c4; border-radius:8px; font:inherit; }
+    button, .boton { display:inline-block; background:var(--azul); color:white; border:1px solid var(--azul); border-radius:8px; padding:10px 18px; font:inherit; text-decoration:none; }
+    .boton-secundario { background:white; color:var(--azul); border-color:var(--borde); }
+    table { border-collapse:collapse; width:100%; }
+    th, td { text-align:left; padding:14px 10px; border-bottom:1px solid var(--borde); vertical-align:top; }
+    th { color:var(--secundario); font-size:12px; text-transform:uppercase; }
+    tr:last-child td { border-bottom:0; }
+    .vacio { color:var(--secundario); }
+    .paginacion { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:center; border-top:1px solid var(--borde); padding-top:18px; margin-top:18px; }
+    @media (max-width:650px) { main { padding:24px 14px; } .barra { padding:16px; } table { display:block; overflow-x:auto; } }
+  </style>
+</head>
+<body>
+  <header class="barra">
+    <div class="marca">RADAR</div>
+    <nav class="usuario" aria-label="Navegación principal">
+      {{ request.user.username }} ·
+      <a href="{% url 'panel_comercial' %}">Panel comercial</a> ·
+      <a href="{% url 'admin:index' %}">Administración</a>
+    </nav>
+  </header>
+  <main>
+    <h1>Talento</h1>
+    <p class="subtitulo">Candidatos disponibles en tus organizaciones.</p>
+    <section class="filtros" aria-labelledby="titulo-busqueda">
+      <h2 id="titulo-busqueda">Buscar candidatos</h2>
+      <form method="get" action="{% url 'talento_candidatos' %}">
+        <label for="busqueda" class="sr-only">Nombre, perfil o contenido del CV</label>
+        <input id="busqueda" type="search" name="q" value="{{ busqueda }}" maxlength="200" placeholder="Nombre, profesión, competencias o contenido del CV">
+        <button type="submit">Buscar</button>
+        {% if busqueda %}<a class="boton boton-secundario" href="{% url 'talento_candidatos' %}">Limpiar</a>{% endif %}
+      </form>
+    </section>
+    <section class="seccion" aria-labelledby="titulo-resultados">
+      <h2 id="titulo-resultados">Resultados</h2>
+      {% if pagina_candidatos.object_list %}
+        <table>
+          <thead><tr><th>Candidato</th><th>Profesión</th><th>Ubicación</th><th>Estado</th></tr></thead>
+          <tbody>
+            {% for candidato in pagina_candidatos %}
+              <tr>
+                <td><a href="{% url 'talento_detalle_candidato' candidato.pk %}">{{ candidato.nombre }}</a></td>
+                <td>{{ candidato.profesion|default:"—" }}</td>
+                <td>{{ candidato.ciudad|default:candidato.region|default:"—" }}</td>
+                <td>{{ candidato.get_estado_display }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <div class="paginacion">
+          <span>Página {{ pagina_candidatos.number }} de {{ pagina_candidatos.paginator.num_pages }}</span>
+          <span>
+            {% if pagina_candidatos.has_previous %}<a class="boton boton-secundario" href="?q={{ busqueda|urlencode }}&pagina={{ pagina_candidatos.previous_page_number }}">Anterior</a>{% endif %}
+            {% if pagina_candidatos.has_next %}<a class="boton" href="?q={{ busqueda|urlencode }}&pagina={{ pagina_candidatos.next_page_number }}">Siguiente</a>{% endif %}
+          </span>
+        </div>
+      {% else %}<p class="vacio">No se encontraron candidatos.</p>{% endif %}
+    </section>
+  </main>
+</body>
+</html>

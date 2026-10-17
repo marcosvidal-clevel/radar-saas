@@ -8,7 +8,11 @@ from core.views import (
     panel_comercial,
 )
 
-from talento.views import descargar_documento_candidato
+from talento.views import (
+    candidatos,
+    descargar_documento_candidato,
+    detalle_candidato,
+)
 
 
 urlpatterns = [
@@ -35,5 +39,15 @@ urlpatterns = [
         "talento/documentos/<int:pk>/descargar/",
         descargar_documento_candidato,
         name="descargar_documento_candidato",
+    ),
+    path(
+        "talento/candidatos/",
+        candidatos,
+        name="talento_candidatos",
+    ),
+    path(
+        "talento/candidatos/<int:pk>/",
+        detalle_candidato,
+        name="talento_detalle_candidato",
     ),
 ]

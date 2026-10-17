@@ -191,6 +191,7 @@
     <div class="marca">RADAR</div>
     <nav class="usuario" aria-label="Navegación principal">
       {{ request.user.username }} ·
+      <a href="{% url 'talento_candidatos' %}">Talento</a> ·
       <a href="{% url 'admin:index' %}">Administración</a> ·
       <a href="{% url 'admin:core_oportunidad_changelist' %}">Oportunidades</a>
     </nav>

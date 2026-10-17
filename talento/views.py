@@ -1,14 +1,106 @@
 
 from pathlib import Path
 
+from django.contrib import admin
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.http import FileResponse, Http404
-from django.shortcuts import get_object_or_404
+from django.core.paginator import Paginator
+from django.shortcuts import get_object_or_404, render
 from django.views.decorators.http import require_GET
 
 from core.models import Membresia
-from .models import DocumentoCandidato
+from .models import Candidato, DocumentoCandidato
+
+
+def _administrador_candidatos():
+    return admin.site._registry[Candidato]
+
+
+def _documentos_consultables(request, candidato):
+    if not request.user.has_perm("talento.view_documentocandidato"):
+        return DocumentoCandidato.objects.none()
+
+    documentos = DocumentoCandidato.objects.filter(
+        candidato=candidato,
+    ).select_related("candidato")
+
+    if request.user.is_superuser:
+        return documentos
+
+    membresia = Membresia.objects.filter(
+        usuario=request.user,
+        organizacion_id=candidato.organizacion_id,
+        organizacion__activa=True,
+        activa=True,
+        rol__in=(
+            Membresia.Rol.ADMINISTRADOR,
+            Membresia.Rol.SUPERVISOR,
+            Membresia.Rol.COLABORADOR,
+        ),
+    ).exists()
+
+    if not membresia:
+        return DocumentoCandidato.objects.none()
+
+    return documentos.exclude(tipo=DocumentoCandidato.Tipo.EVALUACION)
+
+
+@login_required(login_url="admin:login")
+@require_GET
+def candidatos(request):
+    administrador = _administrador_candidatos()
+
+    if not request.user.is_staff or not administrador.has_view_permission(request):
+        raise PermissionDenied("No tienes acceso a Talento.")
+
+    queryset = administrador.get_queryset(request).select_related("organizacion")
+    busqueda = request.GET.get("q", "").strip()[:200]
+    if busqueda:
+        queryset, _ = administrador.get_search_results(
+            request,
+            queryset,
+            busqueda,
+        )
+
+    queryset = queryset.order_by("nombre", "pk").distinct()
+    paginador = Paginator(queryset, 20)
+    pagina = paginador.get_page(request.GET.get("pagina"))
+
+    return render(
+        request,
+        "talento/candidatos.html",
+        {
+            "pagina_candidatos": pagina,
+            "busqueda": busqueda,
+        },
+    )
+
+
+@login_required(login_url="admin:login")
+@require_GET
+def detalle_candidato(request, pk):
+    administrador = _administrador_candidatos()
+
+    if not request.user.is_staff or not administrador.has_view_permission(request):
+        raise PermissionDenied("No tienes acceso a Talento.")
+
+    candidatos_permitidos = administrador.get_queryset(request).select_related(
+        "organizacion",
+    )
+    candidato = get_object_or_404(candidatos_permitidos, pk=pk)
+
+    if not administrador.has_view_permission(request, candidato):
+        raise PermissionDenied("No tienes acceso a este candidato.")
+
+    return render(
+        request,
+        "talento/detalle_candidato.html",
+        {
+            "candidato": candidato,
+            "documentos": _documentos_consultables(request, candidato),
+        },
+    )
 
 
 @login_required
