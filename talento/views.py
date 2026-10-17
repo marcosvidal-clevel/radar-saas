@@ -19,6 +19,7 @@ from django.views.decorators.http import require_GET, require_http_methods
 from core.models import Membresia, Organizacion
 from .forms import ActualizarPostulacionForm, CandidatoForm, CandidatoVacanteForm, EntrevistaForm, PostulacionForm, VacanteEdicionForm, VacanteForm
 from .models import Candidato, DocumentoCandidato, Entrevista, HistorialEstadoPostulacion, Postulacion, Vacante, guardar_postulacion_con_historial
+from .busqueda_asistida import LIMITE_CONSULTA, aplicar_busqueda_asistida, interpretar_consulta
 
 
 def _administrador_candidatos():
@@ -141,13 +142,24 @@ def candidatos(request):
             .order_by(campo)
         )
 
-    busqueda = request.GET.get("q", "").strip()[:200]
-    if busqueda:
-        queryset, _ = administrador.get_search_results(
-            request,
-            queryset,
-            busqueda,
-        )
+    busqueda = request.GET.get("q", "").strip()
+    modo_busqueda = request.GET.get("modo_busqueda", "normal")
+    error_busqueda = ""
+    interpretacion = None
+    if len(busqueda) > LIMITE_CONSULTA:
+        error_busqueda = f"La consulta no puede superar {LIMITE_CONSULTA} caracteres."
+    elif busqueda and modo_busqueda == "asistida":
+        interpretacion = interpretar_consulta(busqueda)
+        if interpretacion["ambiguo"]:
+            error_busqueda = "La consulta contiene una negación ambigua; reformúlala sin exclusiones implícitas."
+        else:
+            queryset = aplicar_busqueda_asistida(queryset, interpretacion)
+            for ubicacion in interpretacion["ubicaciones"]:
+                queryset = queryset.filter(
+                    Q(ciudad__iexact=ubicacion) | Q(region__iexact=ubicacion)
+                )
+    elif busqueda:
+        queryset, _ = administrador.get_search_results(request, queryset, busqueda)
 
     filtros = {}
     for campo in opciones:
@@ -163,6 +175,8 @@ def candidatos(request):
     pagina = paginador.get_page(request.GET.get("pagina"))
 
     parametros = {"q": busqueda} if busqueda else {}
+    if modo_busqueda == "asistida":
+        parametros["modo_busqueda"] = "asistida"
     if incluir_pruebas:
         parametros["incluir_pruebas"] = "1"
     parametros.update(filtros)
@@ -188,6 +202,10 @@ def candidatos(request):
             "filtro_estado": filtros.get("estado", ""),
             "parametros_filtros": urlencode(parametros),
             "total_resultados": paginador.count,
+            "modo_busqueda": modo_busqueda,
+            "error_busqueda": error_busqueda,
+            "interpretacion": interpretacion,
+            "limite_consulta": LIMITE_CONSULTA,
             "hay_filtros": bool(parametros),
             "incluir_pruebas": incluir_pruebas,
         },

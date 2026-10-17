@@ -17,6 +17,10 @@
     h1 { margin:0 0 6px; font-size:30px; }
     .subtitulo { margin:0 0 24px; color:var(--secundario); }
     .filtros, .seccion { background:white; border:1px solid var(--borde); border-radius:12px; padding:20px 22px; margin-bottom:24px; }
+    .criterios { background:#f8fbfd; border:1px solid #cbdce5; border-left:4px solid var(--azul); border-radius:10px; padding:16px 20px; margin:0 0 24px; }
+    .criterios h2 { margin:0 0 8px; font-size:18px; }
+    .criterios ul { margin:8px 0; padding-left:22px; }
+    .criterios p { margin:10px 0 0; }
     .filtros form { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
     .campo-busqueda, .acciones-filtros { grid-column:1 / -1; }
     .campo label { display:block; color:var(--secundario); font-size:14px; margin-bottom:5px; }
@@ -51,7 +55,9 @@
     <section class="filtros" aria-labelledby="titulo-busqueda">
       <h2 id="titulo-busqueda">Buscar candidatos</h2>
       <form method="get" action="{% url 'talento_candidatos' %}">
-        <div class="campo campo-busqueda"><label for="busqueda">Buscar por texto</label><input id="busqueda" type="search" name="q" value="{{ busqueda }}" maxlength="200" placeholder="Nombre, profesión, competencias o contenido del CV"></div>
+        <div class="campo campo-busqueda"><label for="busqueda">Buscar por texto</label><input id="busqueda" type="search" name="q" value="{{ busqueda }}" maxlength="{{ limite_consulta }}" placeholder="Nombre, profesión, competencias o contenido del CV"></div>
+        <div class="campo"><label for="modo_busqueda">Modo</label><select id="modo_busqueda" name="modo_busqueda"><option value="normal"{% if modo_busqueda != "asistida" %} selected{% endif %}>Búsqueda actual</option><option value="asistida"{% if modo_busqueda == "asistida" %} selected{% endif %}>Consulta asistida</option></select></div>
+        {% if error_busqueda %}<p class="error" role="alert">{{ error_busqueda }}</p>{% endif %}
         <div class="campo"><label for="profesion">Profesión</label><select id="profesion" name="profesion"><option value="">Todas</option>{% for opcion in opciones_profesion %}<option value="{{ opcion }}"{% if filtro_profesion == opcion %} selected{% endif %}>{{ opcion }}</option>{% endfor %}</select></div>
         <div class="campo"><label for="especialidad">Especialidad</label><select id="especialidad" name="especialidad"><option value="">Todas</option>{% for opcion in opciones_especialidad %}<option value="{{ opcion }}"{% if filtro_especialidad == opcion %} selected{% endif %}>{{ opcion }}</option>{% endfor %}</select></div>
         <div class="campo"><label for="region">Región</label><select id="region" name="region"><option value="">Todas</option>{% for opcion in opciones_region %}<option value="{{ opcion }}"{% if filtro_region == opcion %} selected{% endif %}>{{ opcion }}</option>{% endfor %}</select></div>
@@ -59,6 +65,7 @@
         <div class="acciones-filtros"><label><input type="checkbox" name="incluir_pruebas" value="1"{% if incluir_pruebas %} checked{% endif %}> Incluir fichas de prueba</label> <button type="submit">Buscar</button>{% if hay_filtros %}<a class="boton boton-secundario" href="{% url 'talento_candidatos' %}">Limpiar</a>{% endif %}</div>
       </form>
     </section>
+    {% if interpretacion %}<section class="criterios" aria-labelledby="titulo-criterios"><h2 id="titulo-criterios">Qué entendí de la consulta</h2><ul>{% for criterio in interpretacion.criterios %}<li><strong>{{ criterio.tipo }}</strong>: {{ criterio.texto }} <small>({{ criterio.evidencia }})</small></li>{% empty %}<li>No se identificaron criterios de texto.</li>{% endfor %}</ul>{% if interpretacion.pendientes %}<p><strong>Pendiente; los resultados no confirman toda la consulta:</strong> {{ interpretacion.pendientes|join:", " }}</p>{% endif %}{% if interpretacion.ubicaciones %}<p>Ubicación confirmada solo por campos estructurados: {{ interpretacion.ubicaciones|join:", " }}</p>{% endif %}</section>{% endif %}
     <section class="seccion" aria-labelledby="titulo-resultados">
       <h2 id="titulo-resultados">Resultados <span style="color:var(--secundario);font-size:15px;font-weight:normal">({{ total_resultados }})</span></h2>
       {% if pagina_candidatos.object_list %}
