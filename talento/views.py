@@ -8,9 +8,11 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import FileResponse, Http404
 from django.core.paginator import Paginator
 from django.db import transaction
+from django.db.models import Count
 from django.db import IntegrityError
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_GET, require_http_methods
 
 from core.models import Membresia, Organizacion
@@ -593,6 +595,12 @@ def detalle_vacante(request, pk):
     postulaciones = Postulacion.objects.none()
     puede_postular = False
     formulario = None
+    estados_postulacion = Postulacion.Estado.choices
+    etapa = request.GET.get("etapa", request.POST.get("etapa", ""))
+    if etapa not in {valor for valor, _ in estados_postulacion}:
+        etapa = ""
+    resumen_postulaciones = {}
+    total_postulaciones = None
     puede_editar_vacante = (
         request.user.has_perm("talento.view_vacante")
         and request.user.has_perm("talento.change_vacante")
@@ -605,9 +613,17 @@ def detalle_vacante(request, pk):
         and administrador_postulaciones.has_view_permission(request)
     )
     if puede_consultar_postulaciones:
-        postulaciones = administrador_postulaciones.get_queryset(request).filter(
+        postulaciones_autorizadas = administrador_postulaciones.get_queryset(request).filter(
             vacante=vacante,
-        ).select_related("candidato", "documento_cv")
+        )
+        total_postulaciones = postulaciones_autorizadas.count()
+        resumen_postulaciones = {
+            fila["estado"]: fila["total"]
+            for fila in postulaciones_autorizadas.values("estado").annotate(total=Count("pk"))
+        }
+        postulaciones = postulaciones_autorizadas.filter(
+            estado=etapa,
+        ).select_related("candidato", "documento_cv") if etapa else postulaciones_autorizadas.select_related("candidato", "documento_cv")
         puede_postular = administrador_postulaciones.has_add_permission(request) and request.user.has_perm("talento.view_candidato")
         for postulacion in postulaciones:
             if administrador_postulaciones.has_view_permission(request, postulacion):
@@ -628,7 +644,10 @@ def detalle_vacante(request, pk):
                 postulacion = formulario_actualizacion.save(commit=False)
                 postulacion.save(update_fields=("estado", "observaciones", "actualizada_en"))
                 messages.success(request, "Postulación actualizada correctamente.")
-                return redirect("seleccion_detalle_vacante", pk=vacante.pk)
+                destino = reverse("seleccion_detalle_vacante", args=[vacante.pk])
+                if etapa:
+                    destino = f"{destino}?{urlencode({'etapa': etapa})}"
+                return redirect(destino)
         else:
             if not puede_postular:
                 raise PermissionDenied("No tienes permiso para vincular candidatos.")
@@ -676,5 +695,10 @@ def detalle_vacante(request, pk):
         "formulario": formulario,
         "formularios_actualizacion": formularios_actualizacion,
         "puede_postular": puede_postular,
+        "puede_consultar_postulaciones": puede_consultar_postulaciones,
         "puede_editar_vacante": puede_editar_vacante,
+        "estados_postulacion": estados_postulacion,
+        "etapa_postulacion": etapa,
+        "resumen_postulaciones": resumen_postulaciones,
+        "total_postulaciones": total_postulaciones,
     })

@@ -24,6 +24,7 @@
     th{color:#405665}
     .errorlist{color:#a32635;margin:5px 0;padding-left:20px}
     .tabla-contenedor{overflow-x:auto}
+    .resumen-etapas nav{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 18px}.resumen-etapas .boton{font-size:.9rem;padding:8px 11px}.resumen-etapas .seleccionado{background:#0d3547;box-shadow:inset 0 -2px 0 #fff}
     @media (max-width:640px){
       .barra{padding:16px 18px}
       main{padding:22px 14px}
@@ -65,6 +66,7 @@
 
     <div class="tarjeta">
       <h2>Postulaciones</h2>
+      {% if puede_consultar_postulaciones %}<div class="resumen-etapas"><p><strong>{{ total_postulaciones }}</strong> postulaciones consultables</p><nav aria-label="Filtrar postulaciones"><a class="boton {% if not etapa_postulacion %}seleccionado{% endif %}" href="{% url 'seleccion_detalle_vacante' vacante.pk %}">Todas ({{ total_postulaciones }})</a>{% for valor, etiqueta in estados_postulacion %}<a class="boton {% if etapa_postulacion == valor %}seleccionado{% endif %}" href="?etapa={{ valor }}">{{ etiqueta }} ({{ resumen_postulaciones|get_item:valor|default:0 }})</a>{% endfor %}</nav></div>{% endif %}
       {% if puede_postular %}<p><a class="boton" href="{% url 'seleccion_nuevo_candidato' vacante.pk %}">Nuevo candidato para esta vacante</a></p>{% endif %}
       {% if postulaciones %}
         <div class="tabla-contenedor">
@@ -81,6 +83,7 @@
                           {% csrf_token %}
                           <input type="hidden" name="accion" value="actualizar_postulacion">
                           <input type="hidden" name="postulacion" value="{{ postulacion.pk }}">
+                          <input type="hidden" name="etapa" value="{{ etapa_postulacion }}">
                           {{ formulario_actualizacion.non_field_errors }}
                           {% for campo in formulario_actualizacion %}<div class="campo">{{ campo.label_tag }}{{ campo }}{{ campo.errors }}</div>{% endfor %}
                           <button class="boton" type="submit">Guardar actualización</button>
@@ -95,7 +98,7 @@
             </tbody>
           </table>
         </div>
-      {% else %}<p>No hay postulaciones consultables.</p>{% endif %}
+      {% else %}<p>{% if etapa_postulacion %}No hay postulaciones consultables en la etapa seleccionada.{% else %}No hay postulaciones consultables.{% endif %}</p>{% endif %}
     </div>
   </main>
 </body>

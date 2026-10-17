@@ -276,3 +276,37 @@ class SeleccionVistasTests(TestCase):
         cliente = self.client_class(enforce_csrf_checks=True)
         cliente.force_login(self.usuario)
         self.assertEqual(cliente.post(reverse("seleccion_editar_vacante", args=[self.vacante.pk]), {"titulo": "Sin CSRF"}).status_code, 403)
+
+    def test_resumen_muestra_todas_las_etapas_y_filtra_la_lista(self):
+        Postulacion.objects.create(vacante=self.vacante, candidato=self.candidato, estado=Postulacion.Estado.RECIBIDA)
+        candidato_dos = Candidato.objects.create(organizacion=self.org_a, nombre="Candidato dos")
+        Postulacion.objects.create(vacante=self.vacante, candidato=candidato_dos, estado=Postulacion.Estado.ENTREVISTA)
+        self.client.force_login(self.usuario)
+        respuesta = self.client.get(reverse("seleccion_detalle_vacante", args=[self.vacante.pk]), {"etapa": Postulacion.Estado.ENTREVISTA})
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.context["total_postulaciones"], 2)
+        self.assertEqual(respuesta.context["resumen_postulaciones"][Postulacion.Estado.RECIBIDA], 1)
+        self.assertEqual(respuesta.context["resumen_postulaciones"][Postulacion.Estado.ENTREVISTA], 1)
+        self.assertEqual(list(respuesta.context["postulaciones"]), [Postulacion.objects.get(candidato=candidato_dos)])
+        self.assertContains(respuesta, "Candidato dos")
+        self.assertContains(respuesta, "Descartada (0)")
+
+    def test_filtro_invalido_equivale_a_todas_y_etapa_vacia_es_clara(self):
+        Postulacion.objects.create(vacante=self.vacante, candidato=self.candidato)
+        self.client.force_login(self.usuario)
+        respuesta = self.client.get(reverse("seleccion_detalle_vacante", args=[self.vacante.pk]), {"etapa": "no_valida"})
+        self.assertEqual(respuesta.context["etapa_postulacion"], "")
+        vacia = self.client.get(reverse("seleccion_detalle_vacante", args=[self.vacante.pk]), {"etapa": Postulacion.Estado.FINALISTA})
+        self.assertContains(vacia, "No hay postulaciones consultables en la etapa seleccionada.")
+
+    def test_actualizacion_conserva_el_filtro_y_sin_permiso_no_revela_conteos(self):
+        postulacion = Postulacion.objects.create(vacante=self.vacante, candidato=self.candidato)
+        self.client.force_login(self.usuario)
+        respuesta = self.client.post(reverse("seleccion_detalle_vacante", args=[self.vacante.pk]), {
+            "accion": "actualizar_postulacion", "postulacion": postulacion.pk,
+            "estado": Postulacion.Estado.ENTREVISTA, "etapa": Postulacion.Estado.RECIBIDA,
+        })
+        self.assertEqual(respuesta.url, reverse("seleccion_detalle_vacante", args=[self.vacante.pk]) + "?etapa=recibida")
+        self.usuario.user_permissions.remove(Permission.objects.get(content_type__app_label="talento", codename="view_postulacion"))
+        sin_permiso = self.client.get(reverse("seleccion_detalle_vacante", args=[self.vacante.pk]))
+        self.assertIsNone(sin_permiso.context["total_postulaciones"])
