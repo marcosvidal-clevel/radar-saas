@@ -4,7 +4,7 @@ from django.core.exceptions import ValidationError
 from django.test import RequestFactory, TestCase
 
 from core.models import Membresia, Organizacion
-from talento.models import Candidato, Vacante, Postulacion
+from talento.models import Candidato, HistorialEstadoPostulacion, Vacante, Postulacion
 
 
 class SeguridadPostulacionesTests(TestCase):
@@ -77,6 +77,17 @@ class SeguridadPostulacionesTests(TestCase):
 
         self.assertIn(self.postulacion_a, registros)
         self.assertNotIn(self.postulacion_b, registros)
+
+    def test_admin_registra_cambio_de_estado_con_logica_comun(self):
+        solicitud = RequestFactory().post("/admin/")
+        solicitud.user = self.usuario
+        administrador = admin.site._registry[Postulacion]
+        postulacion = Postulacion.objects.get(pk=self.postulacion_a.pk)
+        postulacion.estado = Postulacion.Estado.ENTREVISTA
+        administrador.save_model(solicitud, postulacion, None, True)
+        historial = HistorialEstadoPostulacion.objects.get(postulacion=postulacion)
+        self.assertEqual(historial.estado_nuevo, Postulacion.Estado.ENTREVISTA)
+        self.assertEqual(historial.usuario, self.usuario)
 
     def test_selector_vacantes_excluye_organizacion_ajena(self):
         solicitud = RequestFactory().get("/admin/")

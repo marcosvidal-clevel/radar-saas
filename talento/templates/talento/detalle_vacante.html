@@ -88,6 +88,7 @@
                           {% for campo in formulario_actualizacion %}<div class="campo">{{ campo.label_tag }}{{ campo }}{{ campo.errors }}</div>{% endfor %}
                           <button class="boton" type="submit">Guardar actualización</button>
                         </form>
+                        {% if postulacion.historial_estados.all %}<details><summary>Historial de etapas</summary><ul>{% for cambio in postulacion.historial_estados.all %}<li>{{ cambio.get_estado_anterior_display }} → {{ cambio.get_estado_nuevo_display }} · {{ cambio.creado_en|date:"d/m/Y H:i" }}{% if cambio.usuario %} · {{ cambio.usuario.get_username }}{% endif %}</li>{% endfor %}</ul></details>{% endif %}
                       {% else %}{{ postulacion.get_estado_display }}{% endif %}
                     {% endwith %}
                   </td>

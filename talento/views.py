@@ -17,7 +17,7 @@ from django.views.decorators.http import require_GET, require_http_methods
 
 from core.models import Membresia, Organizacion
 from .forms import ActualizarPostulacionForm, CandidatoForm, CandidatoVacanteForm, PostulacionForm, VacanteEdicionForm, VacanteForm
-from .models import Candidato, DocumentoCandidato, Postulacion, Vacante
+from .models import Candidato, DocumentoCandidato, HistorialEstadoPostulacion, Postulacion, Vacante, guardar_postulacion_con_historial
 
 
 def _administrador_candidatos():
@@ -624,6 +624,7 @@ def detalle_vacante(request, pk):
         postulaciones = postulaciones_autorizadas.filter(
             estado=etapa,
         ).select_related("candidato", "documento_cv") if etapa else postulaciones_autorizadas.select_related("candidato", "documento_cv")
+        postulaciones = postulaciones.prefetch_related("historial_estados__usuario")
         puede_postular = administrador_postulaciones.has_add_permission(request) and request.user.has_perm("talento.view_candidato")
         for postulacion in postulaciones:
             if administrador_postulaciones.has_view_permission(request, postulacion):
@@ -642,7 +643,7 @@ def detalle_vacante(request, pk):
             postulacion.formulario_actualizacion = formulario_actualizacion
             if formulario_actualizacion.is_valid():
                 postulacion = formulario_actualizacion.save(commit=False)
-                postulacion.save(update_fields=("estado", "observaciones", "actualizada_en"))
+                guardar_postulacion_con_historial(postulacion, request.user)
                 messages.success(request, "Postulación actualizada correctamente.")
                 destino = reverse("seleccion_detalle_vacante", args=[vacante.pk])
                 if etapa:

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
-from django.db import models
+from django.db import models, transaction
 
 from core.models import Organizacion
 
@@ -474,3 +474,41 @@ class Postulacion(models.Model):
 
     def __str__(self):
         return f"{self.candidato.nombre} - {self.vacante.titulo}"
+
+
+class HistorialEstadoPostulacion(models.Model):
+    postulacion = models.ForeignKey(
+        Postulacion,
+        on_delete=models.CASCADE,
+        related_name="historial_estados",
+    )
+    estado_anterior = models.CharField(max_length=20, choices=Postulacion.Estado.choices)
+    estado_nuevo = models.CharField(max_length=20, choices=Postulacion.Estado.choices)
+    usuario = models.ForeignKey(
+        "auth.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="cambios_estado_postulacion",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-creado_en", "-pk"]
+
+
+def guardar_postulacion_con_historial(postulacion, usuario=None):
+    """Guarda una postulación y registra cambios de estado atómicamente."""
+    anterior = None
+    if postulacion.pk:
+        anterior = type(postulacion).objects.only("estado").get(pk=postulacion.pk).estado
+    with transaction.atomic():
+        postulacion.save()
+        if anterior is not None and anterior != postulacion.estado:
+            HistorialEstadoPostulacion.objects.create(
+                postulacion=postulacion,
+                estado_anterior=anterior,
+                estado_nuevo=postulacion.estado,
+                usuario=usuario if getattr(usuario, "is_authenticated", False) else None,
+            )
+    return postulacion

@@ -14,6 +14,7 @@ from .models import (
     DocumentoCandidato,
     Vacante,
     Postulacion,
+    guardar_postulacion_con_historial,
 )
 
 
@@ -411,3 +412,6 @@ class PostulacionAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
     )
 
     list_select_related = ("candidato", "vacante")
+
+    def save_model(self, request, obj, form, change):
+        guardar_postulacion_con_historial(obj, request.user)

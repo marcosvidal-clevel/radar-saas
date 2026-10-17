@@ -9,7 +9,7 @@ from django.urls import reverse
 from docx import Document
 
 from core.models import Membresia, Organizacion
-from .models import Candidato, DocumentoCandidato, Postulacion, Vacante
+from .models import Candidato, DocumentoCandidato, HistorialEstadoPostulacion, Postulacion, Vacante
 
 
 class SeleccionVistasTests(TestCase):
@@ -310,3 +310,36 @@ class SeleccionVistasTests(TestCase):
         self.usuario.user_permissions.remove(Permission.objects.get(content_type__app_label="talento", codename="view_postulacion"))
         sin_permiso = self.client.get(reverse("seleccion_detalle_vacante", args=[self.vacante.pk]))
         self.assertIsNone(sin_permiso.context["total_postulaciones"])
+
+    def test_cambio_de_etapa_registra_historial_con_usuario_y_fecha(self):
+        postulacion = Postulacion.objects.create(vacante=self.vacante, candidato=self.candidato)
+        self.client.force_login(self.usuario)
+        respuesta = self.client.post(reverse("seleccion_detalle_vacante", args=[self.vacante.pk]), {
+            "accion": "actualizar_postulacion", "postulacion": postulacion.pk,
+            "estado": Postulacion.Estado.ENTREVISTA,
+        })
+        self.assertEqual(respuesta.status_code, 302)
+        historial = HistorialEstadoPostulacion.objects.get(postulacion=postulacion)
+        self.assertEqual(historial.estado_anterior, Postulacion.Estado.RECIBIDA)
+        self.assertEqual(historial.estado_nuevo, Postulacion.Estado.ENTREVISTA)
+        self.assertEqual(historial.usuario, self.usuario)
+        self.assertIsNotNone(historial.creado_en)
+
+    def test_no_duplica_historial_si_estado_no_cambia_ni_si_falla(self):
+        postulacion = Postulacion.objects.create(vacante=self.vacante, candidato=self.candidato)
+        self.client.force_login(self.usuario)
+        datos = {"accion": "actualizar_postulacion", "postulacion": postulacion.pk, "estado": Postulacion.Estado.RECIBIDA}
+        self.assertEqual(self.client.post(reverse("seleccion_detalle_vacante", args=[self.vacante.pk]), datos).status_code, 302)
+        self.assertEqual(HistorialEstadoPostulacion.objects.count(), 0)
+        datos["estado"] = "estado-invalido"
+        self.assertEqual(self.client.post(reverse("seleccion_detalle_vacante", args=[self.vacante.pk]), datos).status_code, 200)
+        self.assertEqual(HistorialEstadoPostulacion.objects.count(), 0)
+
+    def test_historial_aisla_postulaciones_ajenas(self):
+        postulacion = Postulacion.objects.create(vacante=self.vacante, candidato=self.candidato)
+        HistorialEstadoPostulacion.objects.create(
+            postulacion=postulacion, estado_anterior=Postulacion.Estado.RECIBIDA,
+            estado_nuevo=Postulacion.Estado.ENTREVISTA, usuario=self.usuario,
+        )
+        self.client.force_login(self.ajeno)
+        self.assertEqual(self.client.get(reverse("seleccion_detalle_vacante", args=[self.vacante.pk])).status_code, 404)
