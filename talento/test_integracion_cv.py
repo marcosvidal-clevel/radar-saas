@@ -20,6 +20,25 @@ from core.models import Membresia, Organizacion
 from talento.models import Candidato, DocumentoCandidato
 
 
+class ExtraccionPDFFallbackTests(TestCase):
+    def test_pdf_con_layout_vacio_usa_extraccion_estandar(self):
+        pagina = type("PaginaSintetica", (), {
+            "get_contents": lambda self: object(),
+            "extract_text": lambda self, **kwargs: (
+                "" if kwargs.get("extraction_mode") == "layout"
+                else "Texto sintetico recuperable"
+            ),
+        })()
+        lector = type("LectorSintetico", (), {"pages": [pagina]})()
+
+        with patch("talento.extraccion_cv.PdfReader", return_value=lector):
+            from talento.extraccion_cv import extraer_texto_pdf
+
+            resultado = extraer_texto_pdf(BytesIO(b"%PDF-1.4 sintetico"))
+
+        self.assertEqual(resultado, "Texto sintetico recuperable")
+
+
 def crear_pdf(texto):
     """Genera un PDF de una página con texto, sin documentos externos."""
     escritor = PdfWriter()

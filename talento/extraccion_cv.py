@@ -70,6 +70,9 @@ def extraer_texto_pdf(archivo):
         try:
             texto = pagina.extract_text(extraction_mode="layout") or ""
         except (ValueError, TypeError, NotImplementedError):
+            texto = ""
+
+        if not texto.strip():
             texto = pagina.extract_text() or ""
 
         if texto.strip():
