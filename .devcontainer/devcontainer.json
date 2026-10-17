@@ -1,0 +1,3 @@
+{
+  "postStartCommand": "[ -x /workspaces/radar-saas/scripts/radar_web.sh ] && /workspaces/radar-saas/scripts/radar_web.sh start || true"
+}
