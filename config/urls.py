@@ -12,6 +12,7 @@ from talento.views import (
     candidatos,
     descargar_documento_candidato,
     detalle_candidato,
+    nuevo_candidato,
 )
 
 
@@ -49,5 +50,10 @@ urlpatterns = [
         "talento/candidatos/<int:pk>/",
         detalle_candidato,
         name="talento_detalle_candidato",
+    ),
+    path(
+        "talento/candidatos/nuevo/",
+        nuevo_candidato,
+        name="talento_nuevo_candidato",
     ),
 ]

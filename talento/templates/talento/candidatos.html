@@ -41,7 +41,10 @@
   </header>
   <main>
     <h1>Talento</h1>
-    <p class="subtitulo">Candidatos disponibles en tus organizaciones.</p>
+    <div style="display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap">
+      <p class="subtitulo">Candidatos disponibles en tus organizaciones.</p>
+      {% if puede_crear %}<a class="boton" href="{% url 'talento_nuevo_candidato' %}">Nuevo candidato</a>{% endif %}
+    </div>
     <section class="filtros" aria-labelledby="titulo-busqueda">
       <h2 id="titulo-busqueda">Buscar candidatos</h2>
       <form method="get" action="{% url 'talento_candidatos' %}">

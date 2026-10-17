@@ -40,6 +40,7 @@
   </header>
   <main>
     <a class="volver" href="{% url 'talento_candidatos' %}">← Volver a candidatos</a>
+    {% if messages %}{% for mensaje in messages %}<div style="background:#eaf7f1;border-left:4px solid #19836a;padding:12px 16px;margin-bottom:18px" role="status">{{ mensaje }}</div>{% endfor %}{% endif %}
     <h1>{{ candidato.nombre }}</h1>
     <p class="subtitulo">{{ candidato.organizacion.nombre }}</p>
     <div class="rejilla">

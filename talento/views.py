@@ -6,10 +6,13 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.http import FileResponse, Http404
 from django.core.paginator import Paginator
-from django.shortcuts import get_object_or_404, render
-from django.views.decorators.http import require_GET
+from django.db import transaction
+from django.contrib import messages
+from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_GET, require_http_methods
 
-from core.models import Membresia
+from core.models import Membresia, Organizacion
+from .forms import CandidatoForm
 from .models import Candidato, DocumentoCandidato
 
 
@@ -73,7 +76,66 @@ def candidatos(request):
         {
             "pagina_candidatos": pagina,
             "busqueda": busqueda,
+            "puede_crear": administrador.has_add_permission(request),
         },
+    )
+
+
+@login_required(login_url="admin:login")
+@require_http_methods(["GET", "POST"])
+def nuevo_candidato(request):
+    administrador = _administrador_candidatos()
+
+    if not request.user.is_staff or not administrador.has_add_permission(request):
+        raise PermissionDenied("No tienes permiso para crear candidatos.")
+
+    organizaciones_permitidas = Membresia.objects.filter(
+        usuario=request.user,
+        activa=True,
+        organizacion__activa=True,
+        rol__in=administrador.ROLES_GESTION,
+    ).values("organizacion")
+
+    formulario = CandidatoForm(
+        request.POST or None,
+        request.FILES or None,
+        organizaciones=Organizacion.objects.filter(
+            pk__in=organizaciones_permitidas,
+        ),
+    )
+
+    if request.method == "POST" and formulario.is_valid():
+        archivo = formulario.cleaned_data.pop("cv", None)
+        try:
+            with transaction.atomic():
+                candidato = formulario.save()
+                if archivo:
+                    DocumentoCandidato.objects.create(
+                        candidato=candidato,
+                        tipo=DocumentoCandidato.Tipo.CURRICULUM,
+                        nombre=f"CV de {candidato.nombre}",
+                        archivo=archivo,
+                        es_cv_principal=True,
+                        vigente=True,
+                    )
+        except Exception as error:
+            if hasattr(error, "message_dict"):
+                for campo, errores in error.message_dict.items():
+                    for mensaje in errores:
+                        formulario.add_error(campo, mensaje)
+            else:
+                formulario.add_error(
+                    "cv" if archivo else None,
+                    "No se pudo guardar el candidato o su CV.",
+                )
+        else:
+            messages.success(request, "Candidato creado correctamente.")
+            return redirect("talento_detalle_candidato", pk=candidato.pk)
+
+    return render(
+        request,
+        "talento/nuevo_candidato.html",
+        {"formulario": formulario},
     )
 
 
