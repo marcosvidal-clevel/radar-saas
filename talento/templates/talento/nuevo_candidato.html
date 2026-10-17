@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Nuevo candidato | Talento | RADAR</title>
+  <title>{% if candidato %}Editar candidato{% else %}Nuevo candidato{% endif %} | Talento | RADAR</title>
   <style>
     :root { color-scheme:light; --fondo:#f3f5f8; --texto:#182b3a; --secundario:#526474; --borde:#dce3ea; --azul:#164b63; --error:#8f2230; }
     * { box-sizing:border-box; }
@@ -24,11 +24,11 @@
   <header class="barra"><div class="marca">RADAR</div><nav class="usuario" aria-label="Navegación principal">{{ request.user.username }} · <a href="{% url 'talento_candidatos' %}">Talento</a> · <a href="{% url 'panel_comercial' %}">Panel comercial</a></nav></header>
   <main>
     <a href="{% url 'talento_candidatos' %}">← Volver a candidatos</a>
-    <h1>Nuevo candidato</h1>
-    <p class="introduccion">Registra un candidato y, si lo deseas, carga su CV para extraer automáticamente su contenido.</p>
+    <h1>{% if candidato %}Editar candidato{% else %}Nuevo candidato{% endif %}</h1>
+    <p class="introduccion">{% if candidato %}Actualiza los datos del candidato. Si cargas un archivo, reemplazará el CV principal más reciente; los demás documentos se conservarán.{% else %}Registra un candidato y, si lo deseas, carga su CV para extraer automáticamente su contenido.{% endif %}</p>
     <section class="tarjeta">
       {% if formulario.non_field_errors %}<div class="errores" role="alert">{{ formulario.non_field_errors }}</div>{% endif %}
-      <form method="post" enctype="multipart/form-data">
+      <form method="post" enctype="multipart/form-data" action="{% if candidato %}{% url 'talento_editar_candidato' candidato.pk %}{% else %}{% url 'talento_nuevo_candidato' %}{% endif %}">
         {% csrf_token %}
         <div class="rejilla">
           {% for campo in formulario %}
@@ -39,7 +39,7 @@
             </div>
           {% endfor %}
         </div>
-        <div class="acciones"><button type="submit">Guardar candidato</button><a class="boton secundario" href="{% url 'talento_candidatos' %}">Cancelar</a></div>
+        <div class="acciones"><button type="submit">{% if candidato %}Guardar cambios{% else %}Guardar candidato{% endif %}</button><a class="boton secundario" href="{% if candidato %}{% url 'talento_detalle_candidato' candidato.pk %}{% else %}{% url 'talento_candidatos' %}{% endif %}">Cancelar</a></div>
       </form>
     </section>
   </main>

@@ -46,7 +46,6 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
         "especialidad",
         "competencias",
         "experiencia",
-        "documentos__texto_extraido",
     )
 
     def get_search_results(self, request, queryset, search_term):
@@ -84,6 +83,7 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
                 resultados_fragmentados.filter(
                     documentos__texto_extraido__iregex=patron,
                     documentos__tipo=DocumentoCandidato.Tipo.CURRICULUM,
+                    documentos__vigente=True,
                 )
             )
 

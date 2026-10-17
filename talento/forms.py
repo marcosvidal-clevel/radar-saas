@@ -47,6 +47,21 @@ class CandidatoForm(forms.ModelForm):
         self.fields["organizacion"].queryset = organizaciones.filter(
             activa=True,
         )
+        if self.instance and self.instance.pk:
+            self.fields["organizacion"].disabled = True
+            self.fields["cv"].label = "Reemplazar CV principal (opcional)"
+
+    def clean_organizacion(self):
+        organizacion = self.cleaned_data["organizacion"]
+        if (
+            self.instance
+            and self.instance.pk
+            and organizacion.pk != self.instance.organizacion_id
+        ):
+            raise forms.ValidationError(
+                "La organización del candidato no se puede cambiar."
+            )
+        return organizacion
 
     def clean_cv(self):
         archivo = self.cleaned_data.get("cv")

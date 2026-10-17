@@ -49,6 +49,72 @@ def _documentos_consultables(request, candidato):
     return documentos.exclude(tipo=DocumentoCandidato.Tipo.EVALUACION)
 
 
+def _organizaciones_gestion(request, administrador):
+    return Organizacion.objects.filter(
+        pk__in=Membresia.objects.filter(
+            usuario=request.user,
+            activa=True,
+            organizacion__activa=True,
+            rol__in=administrador.ROLES_GESTION,
+        ).values("organizacion")
+    )
+
+
+def _guardar_cv_principal(candidato, archivo):
+    documentos = candidato.documentos.filter(
+        tipo=DocumentoCandidato.Tipo.CURRICULUM,
+        vigente=True,
+    ).order_by("-creado_en", "-pk")
+    documento = documentos.filter(es_cv_principal=True).first()
+    archivo_anterior = None
+
+    for anterior in documentos:
+        if anterior.pk != getattr(documento, "pk", None):
+            anterior.vigente = False
+            anterior.save(update_fields=("vigente", "actualizado_en"))
+
+    if documento is None:
+        documento = DocumentoCandidato(
+            candidato=candidato,
+            tipo=DocumentoCandidato.Tipo.CURRICULUM,
+            nombre=f"CV de {candidato.nombre}",
+            es_cv_principal=True,
+            vigente=True,
+        )
+    elif documento.archivo:
+        archivo_anterior = (
+            documento.archivo.storage,
+            documento.archivo.name,
+        )
+
+    documento.archivo = archivo
+    documento.nombre = f"CV de {candidato.nombre}"
+    documento.save()
+    return documento, archivo_anterior
+
+
+def _validar_permisos_cv(request, candidato, administrador_documentos):
+    documentos_vigentes = candidato.documentos.filter(
+        tipo=DocumentoCandidato.Tipo.CURRICULUM,
+        vigente=True,
+    ).order_by("-creado_en", "-pk")
+    principal = documentos_vigentes.filter(es_cv_principal=True).first()
+
+    if principal is None:
+        if not administrador_documentos.has_add_permission(request):
+            raise PermissionDenied(
+                "No tienes permiso para agregar documentos de candidatos."
+            )
+    for documento in documentos_vigentes:
+        if not administrador_documentos.has_change_permission(
+            request,
+            documento,
+        ):
+            raise PermissionDenied(
+                "No tienes permiso para actualizar los documentos del candidato."
+            )
+
+
 @login_required(login_url="admin:login")
 @require_GET
 def candidatos(request):
@@ -89,23 +155,20 @@ def nuevo_candidato(request):
     if not request.user.is_staff or not administrador.has_add_permission(request):
         raise PermissionDenied("No tienes permiso para crear candidatos.")
 
-    organizaciones_permitidas = Membresia.objects.filter(
-        usuario=request.user,
-        activa=True,
-        organizacion__activa=True,
-        rol__in=administrador.ROLES_GESTION,
-    ).values("organizacion")
-
     formulario = CandidatoForm(
         request.POST or None,
         request.FILES or None,
-        organizaciones=Organizacion.objects.filter(
-            pk__in=organizaciones_permitidas,
-        ),
+        organizaciones=_organizaciones_gestion(request, administrador),
     )
 
     if request.method == "POST" and formulario.is_valid():
         archivo = formulario.cleaned_data.pop("cv", None)
+        if archivo and not admin.site._registry[
+            DocumentoCandidato
+        ].has_add_permission(request):
+            raise PermissionDenied(
+                "No tienes permiso para agregar documentos de candidatos."
+            )
         try:
             with transaction.atomic():
                 candidato = formulario.save()
@@ -155,13 +218,93 @@ def detalle_candidato(request, pk):
     if not administrador.has_view_permission(request, candidato):
         raise PermissionDenied("No tienes acceso a este candidato.")
 
+    puede_editar = administrador.has_change_permission(request, candidato)
+
     return render(
         request,
         "talento/detalle_candidato.html",
         {
             "candidato": candidato,
-            "documentos": _documentos_consultables(request, candidato),
+            "documentos": _documentos_consultables(request, candidato).filter(
+                vigente=True,
+            ),
+            "documentos_historicos": _documentos_consultables(
+                request,
+                candidato,
+            ).filter(vigente=False),
+            "puede_editar": puede_editar,
         },
+    )
+
+
+@login_required(login_url="admin:login")
+@require_http_methods(["GET", "POST"])
+def editar_candidato(request, pk):
+    administrador = _administrador_candidatos()
+
+    if not request.user.is_staff or not administrador.has_view_permission(request):
+        raise PermissionDenied("No tienes acceso a Talento.")
+
+    candidato = get_object_or_404(
+        administrador.get_queryset(request).select_related("organizacion"),
+        pk=pk,
+    )
+    if not administrador.has_change_permission(request, candidato):
+        raise PermissionDenied("No tienes permiso para editar este candidato.")
+
+    formulario = CandidatoForm(
+        request.POST or None,
+        request.FILES or None,
+        instance=candidato,
+        organizaciones=_organizaciones_gestion(request, administrador),
+    )
+    if request.method == "POST" and formulario.is_valid():
+        archivo = formulario.cleaned_data.pop("cv", None)
+        archivos_nuevos = []
+        archivos_anteriores = []
+        if archivo:
+            _validar_permisos_cv(
+                request,
+                candidato,
+                admin.site._registry[DocumentoCandidato],
+            )
+        try:
+            with transaction.atomic():
+                candidato = formulario.save()
+                if archivo:
+                    documento, anterior = _guardar_cv_principal(
+                        candidato,
+                        archivo,
+                    )
+                    archivos_nuevos.append(
+                        (documento.archivo.storage, documento.archivo.name)
+                    )
+                    if anterior:
+                        archivos_anteriores.append(anterior)
+                        transaction.on_commit(
+                            lambda storage=anterior[0], nombre=anterior[1]:
+                            storage.delete(nombre)
+                        )
+        except Exception as error:
+            for storage, nombre in archivos_nuevos:
+                storage.delete(nombre)
+            if hasattr(error, "message_dict"):
+                for campo, errores in error.message_dict.items():
+                    for mensaje in errores:
+                        formulario.add_error(campo, mensaje)
+            else:
+                formulario.add_error(
+                    "cv" if archivo else None,
+                    "No se pudo actualizar el candidato o su CV.",
+                )
+        else:
+            messages.success(request, "Candidato actualizado correctamente.")
+            return redirect("talento_detalle_candidato", pk=candidato.pk)
+
+    return render(
+        request,
+        "talento/nuevo_candidato.html",
+        {"formulario": formulario, "candidato": candidato},
     )
 
 

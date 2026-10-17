@@ -43,6 +43,7 @@
     {% if messages %}{% for mensaje in messages %}<div style="background:#eaf7f1;border-left:4px solid #19836a;padding:12px 16px;margin-bottom:18px" role="status">{{ mensaje }}</div>{% endfor %}{% endif %}
     <h1>{{ candidato.nombre }}</h1>
     <p class="subtitulo">{{ candidato.organizacion.nombre }}</p>
+    {% if puede_editar %}<p><a class="boton" href="{% url 'talento_editar_candidato' candidato.pk %}">Editar candidato</a></p>{% endif %}
     <div class="rejilla">
       <section class="tarjeta"><h2>Contacto</h2><dl>
         <dt>Correo</dt><dd>{{ candidato.email|default:"—" }}</dd>
@@ -61,6 +62,10 @@
       <section class="tarjeta completo"><h2>Documentos consultables</h2>
         {% for documento in documentos %}<div class="documento"><span>{{ documento.nombre }} · {{ documento.get_tipo_display }}</span><a class="boton" href="{% url 'descargar_documento_candidato' documento.pk %}">Descargar</a></div>{% empty %}<p class="vacio">No hay documentos disponibles para tu nivel de acceso.</p>{% endfor %}
       </section>
+      {% if documentos_historicos %}<section class="tarjeta completo"><h2>Documentos históricos</h2>
+        <p class="vacio">Estos documentos se conservan como historial y no participan en la búsqueda activa.</p>
+        {% for documento in documentos_historicos %}<div class="documento"><span>{{ documento.nombre }} · {{ documento.get_tipo_display }}</span><a class="boton" href="{% url 'descargar_documento_candidato' documento.pk %}">Descargar</a></div>{% endfor %}
+      </section>{% endif %}
     </div>
   </main>
 </body>

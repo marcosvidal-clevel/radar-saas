@@ -49,7 +49,10 @@ class VistasTalentoTests(TestCase):
             content_type__app_label="talento",
             codename__in=(
                 "add_candidato",
+                "change_candidato",
                 "view_candidato",
+                "add_documentocandidato",
+                "change_documentocandidato",
                 "view_documentocandidato",
             ),
         ))
@@ -82,6 +85,7 @@ class VistasTalentoTests(TestCase):
                 b"%PDF-1.4 contenido sintetico",
                 content_type="application/pdf",
             ),
+            es_cv_principal=True,
         )
         DocumentoCandidato.objects.filter(pk=documento.pk).update(
             texto_extraido="Experiencia Zafirocurricular"
@@ -132,6 +136,7 @@ class VistasTalentoTests(TestCase):
 
     def test_busqueda_acepta_terminos_fragmentados(self):
         documento = self.crear_documento(self.candidato)
+        documento_pk = documento.pk
         DocumentoCandidato.objects.filter(pk=documento.pk).update(
             texto_extraido="Subgerente de Proye ctos"
         )
@@ -314,3 +319,211 @@ class VistasTalentoTests(TestCase):
             {"nombre": "Candidato CSRF"},
         )
         self.assertEqual(respuesta.status_code, 403)
+
+    def datos_edicion(self, **extras):
+        datos = {
+            "organizacion": self.organizacion_a.pk,
+            "nombre": "Candidato actualizado",
+            "fuente": Candidato.Fuente.OTRO,
+            "estado": Candidato.Estado.DISPONIBLE,
+            "activo": "on",
+        }
+        datos.update(extras)
+        return datos
+
+    def test_edita_candidato_sin_cv_y_conserva_documento(self):
+        documento = self.crear_documento(self.candidato)
+        documento.refresh_from_db()
+        texto_anterior = documento.texto_extraido
+        self.client.force_login(self.usuario)
+
+        respuesta = self.client.post(
+            reverse("talento_editar_candidato", args=[self.candidato.pk]),
+            self.datos_edicion(),
+        )
+
+        self.assertEqual(respuesta.status_code, 302)
+        self.candidato.refresh_from_db()
+        documento.refresh_from_db()
+        self.assertEqual(self.candidato.nombre, "Candidato actualizado")
+        self.assertEqual(documento.texto_extraido, texto_anterior)
+
+    def test_reemplaza_cv_principal_actualiza_busqueda_y_descarga(self):
+        documento = self.crear_documento(self.candidato)
+        documento_pk = documento.pk
+        DocumentoCandidato.objects.filter(pk=documento.pk).update(
+            texto_extraido="PalabraAntigua"
+        )
+        self.client.force_login(self.usuario)
+
+        respuesta = self.client.post(
+            reverse("talento_editar_candidato", args=[self.candidato.pk]),
+            self.datos_edicion(
+                cv=SimpleUploadedFile(
+                    "nuevo.pdf",
+                    self.pdf_sintetico("PalabraNueva"),
+                    content_type="application/pdf",
+                )
+            ),
+        )
+
+        self.assertEqual(respuesta.status_code, 302)
+        documento.refresh_from_db()
+        self.assertEqual(documento.pk, documento_pk)
+        self.assertIn("PalabraNueva", documento.texto_extraido)
+        resultados_nuevos = self.client.get(
+            reverse("talento_candidatos"), {"q": "PalabraNueva"}
+        )
+        resultados_antiguos = self.client.get(
+            reverse("talento_candidatos"), {"q": "PalabraAntigua"}
+        )
+        self.assertContains(resultados_nuevos, "Candidato actualizado")
+        self.assertNotContains(resultados_antiguos, "Candidato actualizado")
+        descarga = self.client.get(
+            reverse("descargar_documento_candidato", args=[documento.pk])
+        )
+        self.assertEqual(descarga.status_code, 200)
+        self.assertIn(b"PalabraNueva", b"".join(descarga.streaming_content))
+
+    def test_reemplaza_solo_cv_principal_y_conserva_otros_documentos(self):
+        principal = self.crear_documento(self.candidato)
+        secundario = DocumentoCandidato.objects.create(
+            candidato=self.candidato,
+            tipo=DocumentoCandidato.Tipo.CURRICULUM,
+            nombre="CV secundario",
+            archivo=SimpleUploadedFile("secundario.pdf", b"secundario"),
+            es_cv_principal=False,
+        )
+        self.client.force_login(self.usuario)
+
+        self.client.post(
+            reverse("talento_editar_candidato", args=[self.candidato.pk]),
+            self.datos_edicion(
+                cv=SimpleUploadedFile(
+                    "reemplazo.pdf",
+                    self.pdf_sintetico("CVPrincipalNuevo"),
+                    content_type="application/pdf",
+                )
+            ),
+        )
+
+        principal.refresh_from_db()
+        secundario.refresh_from_db()
+        self.assertIn("CVPrincipalNuevo", principal.texto_extraido)
+        self.assertEqual(secundario.nombre, "CV secundario")
+        self.assertTrue(secundario.archivo.name)
+
+    def test_edicion_rechaza_archivo_invalido_sin_cambios(self):
+        self.client.force_login(self.usuario)
+        nombre_anterior = self.candidato.nombre
+        respuesta = self.client.post(
+            reverse("talento_editar_candidato", args=[self.candidato.pk]),
+            self.datos_edicion(
+                nombre="Nombre no guardado",
+                cv=SimpleUploadedFile("invalido.exe", b"no"),
+            ),
+        )
+        self.assertEqual(respuesta.status_code, 200)
+        self.candidato.refresh_from_db()
+        self.assertEqual(self.candidato.nombre, nombre_anterior)
+
+    def test_usuario_ajeno_no_puede_editar_candidato(self):
+        self.client.force_login(self.usuario_ajeno)
+        respuesta = self.client.get(
+            reverse("talento_editar_candidato", args=[self.candidato.pk])
+        )
+        self.assertEqual(respuesta.status_code, 404)
+
+    def test_usuario_sin_permiso_no_ve_boton_editar(self):
+        self.client.force_login(self.usuario_sin_permisos)
+        respuesta = self.client.get(reverse("talento_candidatos"))
+        self.assertEqual(respuesta.status_code, 403)
+
+    def test_reproduccion_cv_antiguo_sin_principal_sigue_en_busqueda(self):
+        antiguo = self.crear_documento(self.candidato)
+        antiguo.es_cv_principal = False
+        antiguo.save(update_fields=("es_cv_principal",))
+        self.client.force_login(self.usuario)
+
+        respuesta = self.client.post(
+            reverse("talento_editar_candidato", args=[self.candidato.pk]),
+            self.datos_edicion(
+                cv=SimpleUploadedFile(
+                    "nuevo.pdf",
+                    self.pdf_sintetico("PalabraNueva"),
+                    content_type="application/pdf",
+                )
+            ),
+        )
+
+        self.assertEqual(respuesta.status_code, 302)
+        antiguos = self.client.get(
+            reverse("talento_candidatos"), {"q": "Zafirocurricular"}
+        )
+        self.assertNotContains(antiguos, "Candidato actualizado")
+        antiguo.refresh_from_db()
+        self.assertFalse(antiguo.vigente)
+
+        nuevos = self.client.get(
+            reverse("talento_candidatos"), {"q": "PalabraNueva"}
+        )
+        self.assertContains(nuevos, "Candidato actualizado")
+
+    def test_reproduccion_creacion_cv_sin_permiso_documental(self):
+        Usuario = get_user_model()
+        usuario = Usuario.objects.get(pk=self.usuario.pk)
+        usuario.user_permissions.remove(*Permission.objects.filter(
+            content_type__app_label="talento",
+            codename__in=(
+                "add_documentocandidato",
+                "change_documentocandidato",
+            ),
+        ))
+        self.client.force_login(usuario)
+
+        respuesta = self.client.post(
+            reverse("talento_nuevo_candidato"),
+            {
+                "organizacion": self.organizacion_a.pk,
+                "nombre": "CV Sin Permiso",
+                "fuente": Candidato.Fuente.OTRO,
+                "estado": Candidato.Estado.DISPONIBLE,
+                "cv": SimpleUploadedFile(
+                    "sin-permiso.pdf",
+                    self.pdf_sintetico("SinPermiso"),
+                    content_type="application/pdf",
+                ),
+            },
+        )
+
+        self.assertEqual(respuesta.status_code, 403)
+        self.assertFalse(Candidato.objects.filter(nombre="CV Sin Permiso").exists())
+
+    def test_reemplazo_sin_change_documento_no_modifica_nada(self):
+        documento = self.crear_documento(self.candidato)
+        nombre_anterior = self.candidato.nombre
+        usuario = get_user_model().objects.get(pk=self.usuario.pk)
+        usuario.user_permissions.remove(Permission.objects.get(
+            content_type__app_label="talento",
+            codename="change_documentocandidato",
+        ))
+        usuario = get_user_model().objects.get(pk=self.usuario.pk)
+        self.client.force_login(usuario)
+
+        respuesta = self.client.post(
+            reverse("talento_editar_candidato", args=[self.candidato.pk]),
+            self.datos_edicion(
+                nombre="No debe guardarse",
+                cv=SimpleUploadedFile(
+                    "sin-cambio.pdf",
+                    self.pdf_sintetico("NoDebeGuardar"),
+                    content_type="application/pdf",
+                ),
+            ),
+        )
+
+        self.assertEqual(respuesta.status_code, 403)
+        self.candidato.refresh_from_db()
+        documento.refresh_from_db()
+        self.assertEqual(self.candidato.nombre, nombre_anterior)
+        self.assertNotIn("NoDebeGuardar", documento.texto_extraido)
