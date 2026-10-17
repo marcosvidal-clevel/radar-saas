@@ -1,8 +1,8 @@
 from django import forms
 
-from core.models import Membresia
+from core.models import EmpresaProspectada, Membresia, Oportunidad, Organizacion
 
-from .models import Candidato
+from .models import Candidato, DocumentoCandidato, Postulacion, Vacante
 
 
 class CandidatoForm(forms.ModelForm):
@@ -78,3 +78,60 @@ class CandidatoForm(forms.ModelForm):
                 "El CV no puede superar los 10 MB."
             )
         return archivo
+
+
+class VacanteForm(forms.ModelForm):
+    class Meta:
+        model = Vacante
+        fields = (
+            "organizacion", "empresa", "oportunidad", "titulo",
+            "descripcion", "requisitos", "region", "ciudad", "estado",
+            "publicar_web", "activa",
+        )
+        widgets = {
+            "descripcion": forms.Textarea(attrs={"rows": 4}),
+            "requisitos": forms.Textarea(attrs={"rows": 4}),
+        }
+
+    def __init__(self, *args, organizaciones=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["organizacion"].queryset = organizaciones or Organizacion.objects.none()
+        self.fields["empresa"].queryset = EmpresaProspectada.objects.none()
+        self.fields["oportunidad"].queryset = Oportunidad.objects.none()
+        organizacion_id = self.data.get("organizacion") or getattr(self.instance, "organizacion_id", None)
+        if organizacion_id:
+            self.fields["empresa"].queryset = EmpresaProspectada.objects.filter(organizacion_id=organizacion_id, activa=True)
+            self.fields["oportunidad"].queryset = Oportunidad.objects.filter(organizacion_id=organizacion_id)
+        if self.instance and self.instance.pk:
+            self.fields["organizacion"].disabled = True
+
+    def clean(self):
+        datos = super().clean()
+        organizacion = datos.get("organizacion")
+        for campo in ("empresa", "oportunidad"):
+            objeto = datos.get(campo)
+            if objeto and organizacion and objeto.organizacion_id != organizacion.pk:
+                self.add_error(campo, "Debe pertenecer a la organización de la vacante.")
+        return datos
+
+
+class PostulacionForm(forms.ModelForm):
+    class Meta:
+        model = Postulacion
+        fields = ("candidato", "documento_cv", "fuente", "observaciones")
+        widgets = {"observaciones": forms.Textarea(attrs={"rows": 4})}
+
+    def __init__(self, *args, candidatos=None, documentos=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["candidato"].queryset = candidatos or Candidato.objects.none()
+        self.fields["documento_cv"].queryset = documentos or DocumentoCandidato.objects.none()
+
+    def clean(self):
+        datos = super().clean()
+        candidato = datos.get("candidato")
+        documento = datos.get("documento_cv")
+        if documento and candidato and documento.candidato_id != candidato.pk:
+            self.add_error("documento_cv", "El CV debe pertenecer al candidato.")
+        if documento and (not documento.vigente or documento.tipo != DocumentoCandidato.Tipo.CURRICULUM):
+            self.add_error("documento_cv", "Solo puedes asociar un CV vigente.")
+        return datos

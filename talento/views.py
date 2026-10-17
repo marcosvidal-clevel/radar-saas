@@ -4,17 +4,18 @@ from urllib.parse import urlencode
 
 from django.contrib import admin
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import FileResponse, Http404
 from django.core.paginator import Paginator
 from django.db import transaction
+from django.db import IntegrityError
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_http_methods
 
 from core.models import Membresia, Organizacion
-from .forms import CandidatoForm
-from .models import Candidato, DocumentoCandidato
+from .forms import CandidatoForm, PostulacionForm, VacanteForm
+from .models import Candidato, DocumentoCandidato, Postulacion, Vacante
 
 
 def _administrador_candidatos():
@@ -407,3 +408,131 @@ def descargar_documento_candidato(request, pk):
         as_attachment=True,
         filename=nombre_descarga,
     )
+
+
+def _administrador_seleccion(modelo):
+    return admin.site._registry[modelo]
+
+
+def _vacantes_autorizadas(request):
+    administrador = _administrador_seleccion(Vacante)
+    if not request.user.is_staff or not administrador.has_view_permission(request):
+        raise PermissionDenied("No tienes acceso a Selección.")
+    return administrador.get_queryset(request).select_related(
+        "organizacion", "empresa", "oportunidad",
+    )
+
+
+def _candidatos_postulables(request, vacante):
+    administrador = _administrador_candidatos()
+    if not request.user.has_perm("talento.view_candidato"):
+        return Candidato.objects.none()
+    return administrador.get_queryset(request).filter(
+        organizacion_id=vacante.organizacion_id,
+    )
+
+
+@login_required(login_url="admin:login")
+@require_GET
+def vacantes(request):
+    queryset = _vacantes_autorizadas(request)
+    busqueda = request.GET.get("q", "").strip()[:200]
+    estado = request.GET.get("estado", "").strip()
+    estados = {valor for valor, _ in Vacante.Estado.choices}
+    if busqueda:
+        queryset = queryset.filter(titulo__icontains=busqueda)
+    if estado in estados:
+        queryset = queryset.filter(estado=estado)
+    queryset = queryset.order_by("-creada_en", "-pk")
+    paginador = Paginator(queryset, 20)
+    pagina = paginador.get_page(request.GET.get("pagina"))
+    return render(request, "talento/vacantes.html", {
+        "pagina_vacantes": pagina,
+        "busqueda": busqueda,
+        "filtro_estado": estado if estado in estados else "",
+        "estados": Vacante.Estado.choices,
+        "puede_crear": _administrador_seleccion(Vacante).has_add_permission(request),
+        "total_resultados": paginador.count,
+        "parametros": urlencode({"q": busqueda, "estado": estado} if busqueda or estado in estados else {}),
+    })
+
+
+@login_required(login_url="admin:login")
+@require_http_methods(["GET", "POST"])
+def nueva_vacante(request):
+    administrador = _administrador_seleccion(Vacante)
+    if not request.user.is_staff or not administrador.has_add_permission(request):
+        raise PermissionDenied("No tienes permiso para crear vacantes.")
+    formulario = VacanteForm(
+        request.POST or None,
+        organizaciones=Organizacion.objects.filter(
+            pk__in=administrador.organizaciones_permitidas(request, administrador.ROLES_GESTION),
+            activa=True,
+        ),
+    )
+    if request.method == "POST" and formulario.is_valid():
+        vacante = formulario.save()
+        return redirect("seleccion_detalle_vacante", pk=vacante.pk)
+    return render(request, "talento/nueva_vacante.html", {"formulario": formulario})
+
+
+@login_required(login_url="admin:login")
+@require_http_methods(["GET", "POST"])
+def detalle_vacante(request, pk):
+    vacante = get_object_or_404(_vacantes_autorizadas(request), pk=pk)
+    administrador_postulaciones = _administrador_seleccion(Postulacion)
+    postulaciones = Postulacion.objects.none()
+    puede_postular = False
+    formulario = None
+    if request.user.has_perm("talento.view_postulacion") and administrador_postulaciones.has_view_permission(request):
+        postulaciones = administrador_postulaciones.get_queryset(request).filter(
+            vacante=vacante,
+        ).select_related("candidato", "documento_cv")
+        puede_postular = administrador_postulaciones.has_add_permission(request) and request.user.has_perm("talento.view_candidato")
+    if request.method == "POST":
+        if not puede_postular:
+            raise PermissionDenied("No tienes permiso para vincular candidatos.")
+        candidatos = _candidatos_postulables(request, vacante)
+        documentos = DocumentoCandidato.objects.filter(
+            candidato__in=candidatos,
+            tipo=DocumentoCandidato.Tipo.CURRICULUM,
+            vigente=True,
+        ).exclude(tipo=DocumentoCandidato.Tipo.EVALUACION)
+        formulario = PostulacionForm(request.POST, candidatos=candidatos, documentos=documentos)
+        if formulario.is_valid():
+            try:
+                with transaction.atomic():
+                    postulacion = formulario.save(commit=False)
+                    postulacion.vacante = vacante
+                    postulacion.save()
+            except ValidationError as error:
+                mensajes = error.message_dict.get(
+                    "__all__",
+                    error.messages,
+                )
+                for mensaje in mensajes:
+                    formulario.add_error(
+                        None,
+                        mensaje,
+                    )
+            except IntegrityError:
+                formulario.add_error(
+                    None,
+                    "Este candidato ya está vinculado a la vacante.",
+                )
+            else:
+                return redirect("seleccion_detalle_vacante", pk=vacante.pk)
+    elif puede_postular:
+        candidatos = _candidatos_postulables(request, vacante)
+        documentos = DocumentoCandidato.objects.filter(
+            candidato__in=candidatos,
+            tipo=DocumentoCandidato.Tipo.CURRICULUM,
+            vigente=True,
+        )
+        formulario = PostulacionForm(candidatos=candidatos, documentos=documentos)
+    return render(request, "talento/detalle_vacante.html", {
+        "vacante": vacante,
+        "postulaciones": postulaciones,
+        "formulario": formulario,
+        "puede_postular": puede_postular,
+    })

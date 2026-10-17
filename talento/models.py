@@ -430,6 +430,12 @@ class Postulacion(models.Model):
         verbose_name = "Postulación"
         verbose_name_plural = "Postulaciones"
         ordering = ["-creada_en"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("vacante", "candidato"),
+                name="postulacion_unica_por_vacante_candidato",
+            ),
+        ]
 
     def clean(self):
         super().clean()
