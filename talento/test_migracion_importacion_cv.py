@@ -98,11 +98,11 @@ class ImportacionCVMigrationTests(TransactionTestCase):
             identificador_origen="id-001",
     )
 
-    def test_0014_a_0016_preserva_documentos_procedencias_y_clasificacion(self):
+    def test_0016_a_0017_backfill_preserva_documentos_procedencias_y_clasificacion(self):
         executor = MigrationExecutor(connection)
         latest = executor.loader.graph.leaf_nodes()
         self.addCleanup(executor.migrate, latest)
-        from_targets = [("talento", "0014_candidato_consolidado_en_candidatoprocedencia") if app == "talento" else (app, target) for app, target in latest]
+        from_targets = [("talento", "0016_documentocandidato_pendiente_clasificacion") if app == "talento" else (app, target) for app, target in latest]
         executor.migrate(from_targets)
         old_apps = MigrationExecutor(connection).loader.project_state(from_targets).apps
         OldOrganization = old_apps.get_model("core", "Organizacion")
@@ -124,6 +124,8 @@ class ImportacionCVMigrationTests(TransactionTestCase):
             nombre="Documento histórico",
             archivo="curriculums/historico/0014.pdf",
             sha256="a" * 64,
+            origen_importacion="fuente-antigua",
+            identificador_origen="documento-0014",
         )
         OldOrigin.objects.create(
             candidato=candidate,
@@ -133,16 +135,17 @@ class ImportacionCVMigrationTests(TransactionTestCase):
             sha256="a" * 64,
         )
         executor = MigrationExecutor(connection)
-        to_targets = [("talento", "0016_documentocandidato_pendiente_clasificacion") if app == "talento" else (app, target) for app, target in latest]
+        to_targets = latest
         executor.migrate(to_targets)
         new_apps = MigrationExecutor(connection).loader.project_state(to_targets).apps
         NewDocument = new_apps.get_model("talento", "DocumentoCandidato")
         NewOrigin = new_apps.get_model("talento", "CandidatoProcedencia")
+        NewLink = new_apps.get_model("talento", "DocumentoProcedencia")
         migrated = NewDocument.objects.get(pk=document.pk)
         self.assertEqual(migrated.archivo, "curriculums/historico/0014.pdf")
         self.assertEqual(migrated.sha256, "a" * 64)
-        self.assertEqual(migrated.origen_importacion, "")
-        self.assertEqual(migrated.identificador_origen, "")
+        self.assertEqual(migrated.origen_importacion, "fuente-antigua")
+        self.assertEqual(migrated.identificador_origen, "documento-0014")
         self.assertFalse(migrated.pendiente_clasificacion)
         NewDocument.objects.filter(pk=document.pk).update(pendiente_clasificacion=True)
         self.assertTrue(NewDocument.objects.get(pk=document.pk).pendiente_clasificacion)
@@ -150,4 +153,11 @@ class ImportacionCVMigrationTests(TransactionTestCase):
             candidato_id=candidate.pk,
             origen_importacion="fuente-antigua",
             identificador_origen="persona-0014",
+        ).exists())
+        self.assertTrue(NewLink.objects.filter(
+            documento_id=document.pk,
+            procedencia__candidato_id=candidate.pk,
+            procedencia__origen_importacion="fuente-antigua",
+            procedencia__identificador_origen="persona-0014",
+            identificador_origen="documento-0014",
         ).exists())

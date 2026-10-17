@@ -11,7 +11,12 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import IntegrityError, transaction
 
 from core.models import Membresia, Organizacion
-from talento.models import Candidato, CandidatoProcedencia, DocumentoCandidato
+from talento.models import (
+    Candidato,
+    CandidatoProcedencia,
+    DocumentoCandidato,
+    DocumentoProcedencia,
+)
 
 
 ALLOWED_SUFFIXES = {".pdf", ".doc", ".docx"}
@@ -126,6 +131,21 @@ class Command(BaseCommand):
             candidate = Candidato.objects.get(pk=candidate.consolidado_en_id)
         return candidate
 
+    def _existing_candidate(self, organization, row):
+        candidate = Candidato.objects.filter(
+            organizacion=organization,
+            origen_importacion=row["origen_importacion"],
+            identificador_origen=row["identificador_origen"],
+        ).first()
+        if candidate:
+            return self._canonical(candidate)
+        procedencia = CandidatoProcedencia.objects.filter(
+            organizacion=organization,
+            origen_importacion=row["origen_importacion"],
+            identificador_origen=row["identificador_origen"],
+        ).select_related("candidato").first()
+        return self._canonical(procedencia.candidato) if procedencia else None
+
     def _documents(self, row, position):
         if "documentos" not in row:
             return [{
@@ -205,19 +225,26 @@ class Command(BaseCommand):
                 item["error"] = ",".join(sorted({plan["error"] for plan in plans if plan["status"] != "valido"}))
                 report.append(item)
                 continue
-            existing = Candidato.objects.filter(
+            candidate = self._existing_candidate(organization, row)
+            row_provenance = CandidatoProcedencia.objects.filter(
                 organizacion=organization,
                 origen_importacion=row["origen_importacion"],
                 identificador_origen=row["identificador_origen"],
-            ).first()
-            candidate = self._canonical(existing) if existing else None
+            ).first() if candidate else None
             statuses = []
             for plan in plans:
                 drow, digest = plan["row"], plan["sha256"]
                 current = DocumentoCandidato.objects.filter(
-                    candidato=candidate, origen_importacion=row["origen_importacion"],
-                    identificador_origen=drow["identificador_origen"],
-                ).first() if candidate else None
+                    candidato=candidate,
+                    procedencias__procedencia=row_provenance,
+                    procedencias__identificador_origen=drow["identificador_origen"],
+                ).first() if candidate and row_provenance else None
+                if not current and candidate:
+                    current = DocumentoCandidato.objects.filter(
+                        candidato=candidate,
+                        origen_importacion=row["origen_importacion"],
+                        identificador_origen=drow["identificador_origen"],
+                    ).first()
                 legacy_origin = CandidatoProcedencia.objects.filter(
                     candidato=candidate,
                     organizacion=organization,
@@ -238,6 +265,9 @@ class Command(BaseCommand):
                         owner = Candidato.objects.only("pk", "consolidado_en_id").get(pk=owner_id)
                         if candidate and self._canonical(owner).pk == candidate.pk:
                             same_candidate_hash = True
+                            plan["existing_document"] = DocumentoCandidato.objects.filter(
+                                candidato_id=owner_id, sha256=digest
+                            ).first()
                             break
                     if same_candidate_hash:
                         statuses.append("duplicado")
@@ -269,22 +299,25 @@ class Command(BaseCommand):
         saved_names = []
         try:
             with transaction.atomic():
-                candidate = Candidato.objects.filter(
-                    organizacion=organization,
-                    origen_importacion=row["origen_importacion"],
-                    identificador_origen=row["identificador_origen"],
-                ).first()
+                candidate = self._existing_candidate(organization, row)
                 if candidate:
-                    candidate = self._canonical(candidate)
+                    pass
                 else:
                     candidate = Candidato.objects.create(**self._candidate_fields(row, organization))
-                CandidatoProcedencia.objects.get_or_create(
+                row_provenance, _ = CandidatoProcedencia.objects.get_or_create(
                     organizacion=organization,
                     origen_importacion=row["origen_importacion"],
                     identificador_origen=row["identificador_origen"],
                     defaults={"candidato": candidate},
                 )
                 for plan, status in zip(item["document_plans"], item["document_statuses"]):
+                    if status == "duplicado" and plan.get("existing_document"):
+                        DocumentoProcedencia.objects.get_or_create(
+                            documento=plan["existing_document"],
+                            procedencia=row_provenance,
+                            identificador_origen=plan["row"]["identificador_origen"],
+                        )
+                        continue
                     if status not in {"documento_nuevo", "pendiente_clasificacion"}:
                         continue
                     drow = plan["row"]
@@ -304,6 +337,11 @@ class Command(BaseCommand):
                         document.archivo.save(plan["path"].name, File(source), save=False)
                     saved_names.append(document.archivo.name)
                     document.save()
+                    DocumentoProcedencia.objects.get_or_create(
+                        documento=document,
+                        procedencia=row_provenance,
+                        identificador_origen=drow["identificador_origen"],
+                    )
         except Exception:
             for saved_name in saved_names:
                 default_storage.delete(saved_name)

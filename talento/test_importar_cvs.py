@@ -10,13 +10,15 @@ from pypdf import PdfWriter
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
+from django.core.exceptions import ValidationError
 from django.core import management
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import CommandError
+from django.db import IntegrityError
 from django.test import TestCase, override_settings
 
 from core.models import Membresia, Organizacion
-from .models import Candidato, DocumentoCandidato
+from .models import Candidato, CandidatoProcedencia, DocumentoCandidato, DocumentoProcedencia
 
 
 @override_settings(MEDIA_ROOT="/tmp/radar-import-command-tests")
@@ -157,6 +159,117 @@ class ImportarCVsTests(TestCase):
         self.assertEqual(Candidato.objects.count(), 1)
         self.assertEqual(DocumentoCandidato.objects.count(), 2)
         self.assertEqual(Candidato.objects.get().nombre, "Persona")
+
+    def test_procedencias_alternativas_comparten_cv_y_controlan_reimportacion(self):
+        candidate = Candidato.objects.create(
+            organizacion=self.organizacion,
+            nombre="Persona con dos procedencias",
+            origen_importacion="fuente-a",
+            identificador_origen="origen-a",
+        )
+        first = CandidatoProcedencia.objects.create(
+            candidato=candidate,
+            organizacion=self.organizacion,
+            origen_importacion="fuente-a",
+            identificador_origen="origen-a",
+        )
+        second = CandidatoProcedencia.objects.create(
+            candidato=candidate,
+            organizacion=self.organizacion,
+            origen_importacion="fuente-b",
+            identificador_origen="origen-b",
+        )
+        document = DocumentoCandidato.objects.create(
+            candidato=candidate,
+            tipo=DocumentoCandidato.Tipo.CURRICULUM,
+            nombre="CV compartido",
+            archivo=SimpleUploadedFile("cv.pdf", self.pdf.read_bytes()),
+            origen_importacion="fuente-a",
+            identificador_origen="cv-a",
+            es_cv_principal=True,
+        )
+        DocumentoProcedencia.objects.create(
+            documento=document, procedencia=first, identificador_origen="cv-a"
+        )
+        DocumentoProcedencia.objects.create(
+            documento=document, procedencia=second, identificador_origen="cv-b"
+        )
+
+        def one_row(source, candidate_id, document_id, filename="cv.pdf", **extra):
+            row = {
+                "identificador_origen": candidate_id,
+                "origen_importacion": source,
+                "nombre": "Nombre no usado para vincular",
+                "documentos": [{
+                    "identificador_origen": document_id,
+                    "archivo": filename,
+                    "tipo": "curriculum",
+                }],
+            }
+            row.update(extra)
+            return row
+
+        original_a = self.manifest([one_row("fuente-a", "origen-a", "cv-a")], name="alt-a.json")
+        original_b = self.manifest([one_row("fuente-b", "origen-b", "cv-b")], name="alt-b.json")
+        self.assertIn("duplicado=1", self.run_command(original_a))
+        self.assertIn("duplicado=1", self.run_command(original_b))
+        self.assertEqual(Candidato.objects.count(), 1)
+        self.assertEqual(DocumentoCandidato.objects.count(), 1)
+        self.assertEqual(DocumentoProcedencia.objects.filter(documento=document).count(), 2)
+
+        (self.root / "cv.pdf").write_bytes(b"different file")
+        changed = self.manifest([one_row("fuente-b", "origen-b", "cv-b")], name="alt-b-changed.json")
+        self.assertIn("pendiente_revision=1", self.run_command(changed))
+        self.assertEqual(DocumentoCandidato.objects.count(), 1)
+
+        new_id = self.manifest([
+            one_row("fuente-b", "origen-b", "documento-nuevo", filename="cv.docx")
+        ], name="alt-b-new.json")
+        self.assertIn("documento_nuevo=1", self.run_command(new_id))
+        self.run_command(new_id, "--importar")
+        self.assertEqual(Candidato.objects.count(), 1)
+        self.assertEqual(DocumentoCandidato.objects.count(), 2)
+        self.assertEqual(
+            DocumentoProcedencia.objects.filter(procedencia=second).count(), 2
+        )
+
+    def test_clave_documental_no_puede_apuntar_a_dos_documentos(self):
+        candidate = Candidato.objects.create(organizacion=self.organizacion, nombre="Persona clave")
+        procedencia = CandidatoProcedencia.objects.create(
+            candidato=candidate, organizacion=self.organizacion,
+            origen_importacion="fuente-clave", identificador_origen="persona-clave",
+        )
+        first = DocumentoCandidato.objects.create(
+            candidato=candidate, tipo="curriculum", nombre="CV uno",
+            archivo=SimpleUploadedFile("uno.pdf", b"uno"),
+        )
+        second = DocumentoCandidato.objects.create(
+            candidato=candidate, tipo="curriculum", nombre="CV dos",
+            archivo=SimpleUploadedFile("dos.pdf", b"dos"),
+        )
+        DocumentoProcedencia.objects.create(
+            documento=first, procedencia=procedencia, identificador_origen="cv-clave"
+        )
+        with self.assertRaises(IntegrityError):
+            DocumentoProcedencia.objects.create(
+                documento=second, procedencia=procedencia, identificador_origen="cv-clave"
+            )
+
+    def test_rechaza_vinculo_incoherente_de_candidato_y_organizacion(self):
+        other = Candidato.objects.create(organizacion=self.otra_organizacion, nombre="Persona ajena")
+        procedencia = CandidatoProcedencia.objects.create(
+            candidato=other, organizacion=self.otra_organizacion,
+            origen_importacion="fuente-ajena", identificador_origen="persona-ajena",
+        )
+        own = Candidato.objects.create(organizacion=self.organizacion, nombre="Persona propia")
+        document = DocumentoCandidato.objects.create(
+            candidato=own, tipo="curriculum", nombre="CV incoherente",
+            archivo=SimpleUploadedFile("incoherente.pdf", b"incoherente"),
+        )
+        with self.assertRaises(ValidationError):
+            DocumentoProcedencia(
+                documento=document, procedencia=procedencia, identificador_origen="cv-ajeno"
+            ).full_clean()
 
     def test_identificador_documental_con_hash_distinto_queda_pendiente(self):
         self.run_command(self.manifest([self.record("same")]), "--importar")

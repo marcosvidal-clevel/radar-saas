@@ -367,6 +367,41 @@ class DocumentoCandidato(models.Model):
         return f"{self.candidato.nombre} - {self.nombre}"
 
 
+class DocumentoProcedencia(models.Model):
+    documento = models.ForeignKey(
+        DocumentoCandidato,
+        on_delete=models.CASCADE,
+        related_name="procedencias",
+    )
+    procedencia = models.ForeignKey(
+        CandidatoProcedencia,
+        on_delete=models.PROTECT,
+        related_name="documentos",
+    )
+    identificador_origen = models.CharField(max_length=200)
+
+    def clean(self):
+        if self.documento_id and self.procedencia_id:
+            documento = self.documento
+            procedencia = self.procedencia
+            if documento.candidato_id != procedencia.candidato_id:
+                raise ValidationError(
+                    "El documento y la procedencia deben pertenecer al mismo candidato."
+                )
+            if documento.candidato.organizacion_id != procedencia.organizacion_id:
+                raise ValidationError(
+                    "El documento y la procedencia deben pertenecer a la misma organización."
+                )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("procedencia", "identificador_origen"),
+                name="procedencia_identificador_documento_unico",
+            ),
+        ]
+
+
 class Vacante(models.Model):
 
     class Estado(models.TextChoices):
