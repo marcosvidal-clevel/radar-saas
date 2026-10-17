@@ -14,7 +14,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_http_methods
 
 from core.models import Membresia, Organizacion
-from .forms import CandidatoForm, PostulacionForm, VacanteForm
+from .forms import ActualizarPostulacionForm, CandidatoForm, PostulacionForm, VacanteForm
 from .models import Candidato, DocumentoCandidato, Postulacion, Vacante
 
 
@@ -484,22 +484,47 @@ def detalle_vacante(request, pk):
     postulaciones = Postulacion.objects.none()
     puede_postular = False
     formulario = None
-    if request.user.has_perm("talento.view_postulacion") and administrador_postulaciones.has_view_permission(request):
+    formularios_actualizacion = {}
+    puede_consultar_postulaciones = (
+        request.user.has_perm("talento.view_postulacion")
+        and administrador_postulaciones.has_view_permission(request)
+    )
+    if puede_consultar_postulaciones:
         postulaciones = administrador_postulaciones.get_queryset(request).filter(
             vacante=vacante,
         ).select_related("candidato", "documento_cv")
         puede_postular = administrador_postulaciones.has_add_permission(request) and request.user.has_perm("talento.view_candidato")
+        for postulacion in postulaciones:
+            if administrador_postulaciones.has_view_permission(request, postulacion):
+                formulario_actualizacion = ActualizarPostulacionForm(instance=postulacion)
+                formularios_actualizacion[postulacion.pk] = formulario_actualizacion
+                postulacion.formulario_actualizacion = formulario_actualizacion
     if request.method == "POST":
-        if not puede_postular:
-            raise PermissionDenied("No tienes permiso para vincular candidatos.")
-        candidatos = _candidatos_postulables(request, vacante)
-        documentos = DocumentoCandidato.objects.filter(
-            candidato__in=candidatos,
-            tipo=DocumentoCandidato.Tipo.CURRICULUM,
-            vigente=True,
-        ).exclude(tipo=DocumentoCandidato.Tipo.EVALUACION)
-        formulario = PostulacionForm(request.POST, candidatos=candidatos, documentos=documentos)
-        if formulario.is_valid():
+        if request.POST.get("accion") == "actualizar_postulacion":
+            if not puede_consultar_postulaciones:
+                raise PermissionDenied("No tienes permiso para consultar postulaciones.")
+            postulacion = get_object_or_404(postulaciones, pk=request.POST.get("postulacion"))
+            if not request.user.has_perm("talento.change_postulacion") or not administrador_postulaciones.has_change_permission(request, postulacion):
+                raise PermissionDenied("No tienes permiso para actualizar esta postulación.")
+            formulario_actualizacion = ActualizarPostulacionForm(request.POST, instance=postulacion)
+            formularios_actualizacion[postulacion.pk] = formulario_actualizacion
+            postulacion.formulario_actualizacion = formulario_actualizacion
+            if formulario_actualizacion.is_valid():
+                postulacion = formulario_actualizacion.save(commit=False)
+                postulacion.save(update_fields=("estado", "observaciones", "actualizada_en"))
+                messages.success(request, "Postulación actualizada correctamente.")
+                return redirect("seleccion_detalle_vacante", pk=vacante.pk)
+        else:
+            if not puede_postular:
+                raise PermissionDenied("No tienes permiso para vincular candidatos.")
+            candidatos = _candidatos_postulables(request, vacante)
+            documentos = DocumentoCandidato.objects.filter(
+                candidato__in=candidatos,
+                tipo=DocumentoCandidato.Tipo.CURRICULUM,
+                vigente=True,
+            ).exclude(tipo=DocumentoCandidato.Tipo.EVALUACION)
+            formulario = PostulacionForm(request.POST, candidatos=candidatos, documentos=documentos)
+        if formulario is not None and formulario.is_valid():
             try:
                 with transaction.atomic():
                     postulacion = formulario.save(commit=False)
@@ -534,5 +559,6 @@ def detalle_vacante(request, pk):
         "vacante": vacante,
         "postulaciones": postulaciones,
         "formulario": formulario,
+        "formularios_actualizacion": formularios_actualizacion,
         "puede_postular": puede_postular,
     })

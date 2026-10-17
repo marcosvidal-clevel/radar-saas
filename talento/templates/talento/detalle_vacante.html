@@ -1,1 +1,101 @@
-<!DOCTYPE html><html lang="es-CL"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>RADAR | {{ vacante.titulo }}</title><style>body{margin:0;background:#f3f5f8;color:#182b3a;font-family:Arial,sans-serif}.barra{background:#142f40;color:#fff;padding:18px 28px}.barra a{color:#fff}main{max-width:1100px;margin:auto;padding:32px 24px}.tarjeta{background:#fff;border:1px solid #dce3ea;border-radius:12px;padding:22px;margin:20px 0}.campo{margin-bottom:14px}.campo label{display:block;margin-bottom:5px}.campo input,.campo select,.campo textarea{width:100%;padding:10px;border:1px solid #aab8c4;border-radius:7px;font:inherit;box-sizing:border-box}.boton{background:#164b63;color:#fff;padding:10px 16px;border-radius:8px;border:0;text-decoration:none;font:inherit}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:12px;border-bottom:1px solid #dce3ea}.errorlist{color:#a32635}</style></head><body><header class="barra"><strong>RADAR</strong> · <a href="{% url 'seleccion_vacantes' %}">Selección</a> · <a href="{% url 'talento_candidatos' %}">Talento</a> · <a href="{% url 'panel_comercial' %}">Panel comercial</a></header><main><p><a href="{% url 'seleccion_vacantes' %}">← Volver a vacantes</a></p><div class="tarjeta"><h1>{{ vacante.titulo }}</h1><p>{{ vacante.get_estado_display }} · {{ vacante.organizacion }}</p><p>{{ vacante.descripcion }}</p><h2>Requisitos</h2><p>{{ vacante.requisitos|linebreaksbr }}</p></div>{% if formulario %}<div class="tarjeta"><h2>Vincular candidato</h2><form method="post">{% csrf_token %}{{ formulario.non_field_errors }}{% for campo in formulario %}<div class="campo">{{ campo.label_tag }}{{ campo }}{{ campo.errors }}</div>{% endfor %}<button class="boton" type="submit">Vincular candidato</button></form></div>{% endif %}<div class="tarjeta"><h2>Postulaciones</h2>{% if postulaciones %}<table><thead><tr><th>Candidato</th><th>Estado</th><th>Fuente</th><th>CV</th></tr></thead><tbody>{% for postulacion in postulaciones %}<tr><td><a href="{% url 'talento_detalle_candidato' postulacion.candidato.pk %}">{{ postulacion.candidato.nombre }}</a></td><td>{{ postulacion.get_estado_display }}</td><td>{{ postulacion.get_fuente_display }}</td><td>{% if postulacion.documento_cv %}CV vigente asociado{% else %}Sin CV{% endif %}</td></tr>{% endfor %}</tbody></table>{% else %}<p>No hay postulaciones consultables.</p>{% endif %}</div></main></body></html>
+{% load talento_tags %}
+<!DOCTYPE html>
+<html lang="es-CL">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RADAR | {{ vacante.titulo }}</title>
+  <style>
+    :root{color-scheme:light}
+    *{box-sizing:border-box}
+    body{margin:0;background:#f3f5f8;color:#182b3a;font-family:Arial,sans-serif;line-height:1.45}
+    .barra{background:#142f40;color:#fff;padding:18px 28px}
+    .barra a{color:#fff}
+    main{max-width:1100px;margin:auto;padding:32px 24px}
+    .tarjeta{background:#fff;border:1px solid #dce3ea;border-radius:12px;padding:22px;margin:20px 0}
+    .campo{margin-bottom:14px}
+    .campo label{display:block;margin-bottom:5px;font-weight:600}
+    .campo input,.campo select,.campo textarea{width:100%;padding:10px;border:1px solid #aab8c4;border-radius:7px;font:inherit}
+    .boton{background:#164b63;color:#fff;padding:10px 16px;border-radius:8px;border:0;text-decoration:none;font:inherit;cursor:pointer}
+    .boton:hover{background:#103a4b}
+    .mensaje{padding:12px 14px;background:#dff3e5;color:#185c2a;border:1px solid #b8dfc2;border-radius:8px}
+    table{border-collapse:collapse;width:100%}
+    th,td{text-align:left;padding:12px;border-bottom:1px solid #dce3ea;vertical-align:top}
+    th{color:#405665}
+    .errorlist{color:#a32635;margin:5px 0;padding-left:20px}
+    .tabla-contenedor{overflow-x:auto}
+    @media (max-width:640px){
+      .barra{padding:16px 18px}
+      main{padding:22px 14px}
+      .tarjeta{padding:16px;margin:14px 0}
+      th,td{padding:9px 7px;font-size:.93rem}
+      .postulacion-form{min-width:230px}
+    }
+  </style>
+</head>
+<body>
+  <header class="barra">
+    <strong>RADAR</strong> ·
+    <a href="{% url 'seleccion_vacantes' %}">Selección</a> ·
+    <a href="{% url 'talento_candidatos' %}">Talento</a> ·
+    <a href="{% url 'panel_comercial' %}">Panel comercial</a>
+  </header>
+  <main>
+    <p><a href="{% url 'seleccion_vacantes' %}">← Volver a vacantes</a></p>
+    {% for mensaje in messages %}<p class="mensaje">{{ mensaje }}</p>{% endfor %}
+
+    <div class="tarjeta">
+      <h1>{{ vacante.titulo }}</h1>
+      <p>{{ vacante.get_estado_display }} · {{ vacante.organizacion }}</p>
+      <p>{{ vacante.descripcion }}</p>
+      <h2>Requisitos</h2>
+      <p>{{ vacante.requisitos|linebreaksbr }}</p>
+    </div>
+
+    {% if formulario %}
+      <div class="tarjeta">
+        <h2>Vincular candidato</h2>
+        <form method="post">
+          {% csrf_token %}{{ formulario.non_field_errors }}
+          {% for campo in formulario %}<div class="campo">{{ campo.label_tag }}{{ campo }}{{ campo.errors }}</div>{% endfor %}
+          <button class="boton" type="submit">Vincular candidato</button>
+        </form>
+      </div>
+    {% endif %}
+
+    <div class="tarjeta">
+      <h2>Postulaciones</h2>
+      {% if postulaciones %}
+        <div class="tabla-contenedor">
+          <table>
+            <thead><tr><th>Candidato</th><th>Estado y observaciones</th><th>Fuente</th><th>CV</th></tr></thead>
+            <tbody>
+              {% for postulacion in postulaciones %}
+                <tr>
+                  <td><a href="{% url 'talento_detalle_candidato' postulacion.candidato.pk %}">{{ postulacion.candidato.nombre }}</a></td>
+                  <td>
+                    {% with formulario_actualizacion=formularios_actualizacion|get_item:postulacion.pk %}
+                      {% if formulario_actualizacion %}
+                        <form class="postulacion-form" method="post">
+                          {% csrf_token %}
+                          <input type="hidden" name="accion" value="actualizar_postulacion">
+                          <input type="hidden" name="postulacion" value="{{ postulacion.pk }}">
+                          {{ formulario_actualizacion.non_field_errors }}
+                          {% for campo in formulario_actualizacion %}<div class="campo">{{ campo.label_tag }}{{ campo }}{{ campo.errors }}</div>{% endfor %}
+                          <button class="boton" type="submit">Guardar actualización</button>
+                        </form>
+                      {% else %}{{ postulacion.get_estado_display }}{% endif %}
+                    {% endwith %}
+                  </td>
+                  <td>{{ postulacion.get_fuente_display }}</td>
+                  <td>{% if postulacion.documento_cv %}CV vigente asociado{% else %}Sin CV{% endif %}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}<p>No hay postulaciones consultables.</p>{% endif %}
+    </div>
+  </main>
+</body>
+</html>

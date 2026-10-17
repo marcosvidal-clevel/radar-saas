@@ -22,7 +22,7 @@ class SeleccionVistasTests(TestCase):
         Membresia.objects.create(usuario=cls.ajeno, organizacion=cls.org_b, rol=Membresia.Rol.SUPERVISOR)
         permisos = Permission.objects.filter(
             content_type__app_label="talento",
-            codename__in=("view_vacante", "add_vacante", "view_postulacion", "add_postulacion", "view_candidato", "view_documentocandidato"),
+            codename__in=("view_vacante", "add_vacante", "view_postulacion", "add_postulacion", "change_postulacion", "view_candidato", "view_documentocandidato"),
         )
         cls.usuario.user_permissions.add(*permisos)
         cls.ajeno.user_permissions.add(*permisos)
@@ -132,3 +132,49 @@ class SeleccionVistasTests(TestCase):
         self.client.force_login(self.usuario)
         respuesta = self.client.post(reverse("seleccion_nueva_vacante"), {"titulo": "Sin CSRF"})
         self.assertEqual(respuesta.status_code, 403)
+
+    def test_actualiza_estado_y_observaciones_sin_cambiar_relaciones(self):
+        postulacion = Postulacion.objects.create(
+            vacante=self.vacante, candidato=self.candidato,
+            fuente=Postulacion.Fuente.REFERIDO, observaciones="Inicial",
+        )
+        self.client.force_login(self.usuario)
+        respuesta = self.client.post(reverse("seleccion_detalle_vacante", args=[self.vacante.pk]), {
+            "accion": "actualizar_postulacion", "postulacion": postulacion.pk,
+            "estado": Postulacion.Estado.ENTREVISTA, "observaciones": "Llamar mañana",
+            "candidato": self.candidato_ajeno.pk, "fuente": Postulacion.Fuente.WEB,
+        })
+        self.assertEqual(respuesta.status_code, 302)
+        postulacion.refresh_from_db()
+        self.assertEqual(postulacion.estado, Postulacion.Estado.ENTREVISTA)
+        self.assertEqual(postulacion.observaciones, "Llamar mañana")
+        self.assertEqual(postulacion.candidato_id, self.candidato.pk)
+        self.assertEqual(postulacion.fuente, Postulacion.Fuente.REFERIDO)
+
+    def test_actualizacion_rechaza_estado_invalido_y_conserva_valores(self):
+        postulacion = Postulacion.objects.create(vacante=self.vacante, candidato=self.candidato)
+        self.client.force_login(self.usuario)
+        respuesta = self.client.post(reverse("seleccion_detalle_vacante", args=[self.vacante.pk]), {
+            "accion": "actualizar_postulacion", "postulacion": postulacion.pk,
+            "estado": "inventado", "observaciones": "Texto enviado",
+        })
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(respuesta, "Texto enviado")
+        postulacion.refresh_from_db()
+        self.assertEqual(postulacion.estado, Postulacion.Estado.RECIBIDA)
+
+    def test_actualizacion_requiere_change_y_csrf(self):
+        postulacion = Postulacion.objects.create(vacante=self.vacante, candidato=self.candidato)
+        self.usuario.user_permissions.remove(Permission.objects.get(content_type__app_label="talento", codename="change_postulacion"))
+        self.client.force_login(self.usuario)
+        self.assertEqual(self.client.post(reverse("seleccion_detalle_vacante", args=[self.vacante.pk]), {
+            "accion": "actualizar_postulacion", "postulacion": postulacion.pk,
+            "estado": Postulacion.Estado.ENTREVISTA,
+        }).status_code, 403)
+        cliente = self.client_class(enforce_csrf_checks=True)
+        cliente.force_login(self.usuario)
+        self.usuario.user_permissions.add(Permission.objects.get(content_type__app_label="talento", codename="change_postulacion"))
+        self.assertEqual(cliente.post(reverse("seleccion_detalle_vacante", args=[self.vacante.pk]), {
+            "accion": "actualizar_postulacion", "postulacion": postulacion.pk,
+            "estado": Postulacion.Estado.ENTREVISTA,
+        }).status_code, 403)

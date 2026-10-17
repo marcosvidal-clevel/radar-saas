@@ -135,3 +135,10 @@ class PostulacionForm(forms.ModelForm):
         if documento and (not documento.vigente or documento.tipo != DocumentoCandidato.Tipo.CURRICULUM):
             self.add_error("documento_cv", "Solo puedes asociar un CV vigente.")
         return datos
+
+
+class ActualizarPostulacionForm(forms.ModelForm):
+    class Meta:
+        model = Postulacion
+        fields = ("estado", "observaciones")
+        widgets = {"observaciones": forms.Textarea(attrs={"rows": 4})}
