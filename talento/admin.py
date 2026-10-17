@@ -14,6 +14,7 @@ from .models import (
     DocumentoCandidato,
     Vacante,
     Postulacion,
+    Entrevista,
     guardar_postulacion_con_historial,
 )
 
@@ -415,3 +416,12 @@ class PostulacionAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
 
     def save_model(self, request, obj, form, change):
         guardar_postulacion_con_historial(obj, request.user)
+
+
+@admin.register(Entrevista)
+class EntrevistaAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
+    organizacion_lookup = "postulacion__vacante__organizacion_id"
+    list_display = ("postulacion", "fecha_hora", "entrevistador", "modalidad", "estado", "creado_por")
+    list_filter = ("estado", "modalidad")
+    search_fields = ("postulacion__candidato__nombre", "entrevistador")
+    list_select_related = ("postulacion__candidato", "postulacion__vacante", "creado_por")

@@ -2,6 +2,7 @@
 import uuid
 from pathlib import Path
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models, transaction
@@ -512,3 +513,35 @@ def guardar_postulacion_con_historial(postulacion, usuario=None):
                 usuario=usuario if getattr(usuario, "is_authenticated", False) else None,
             )
     return postulacion
+
+
+class Entrevista(models.Model):
+    class Modalidad(models.TextChoices):
+        PRESENCIAL = "presencial", "Presencial"
+        VIDEOLLAMADA = "videollamada", "Videollamada"
+        TELEFONO = "telefono", "Teléfono"
+
+    class Estado(models.TextChoices):
+        PROGRAMADA = "programada", "Programada"
+        REALIZADA = "realizada", "Realizada"
+        CANCELADA = "cancelada", "Cancelada"
+
+    postulacion = models.ForeignKey(Postulacion, on_delete=models.CASCADE, related_name="entrevistas")
+    fecha_hora = models.DateTimeField()
+    motivo = models.CharField(max_length=200, blank=True, null=True)
+    entrevistador = models.CharField(max_length=200)
+    modalidad = models.CharField(max_length=20, choices=Modalidad.choices)
+    lugar_enlace = models.CharField(max_length=500, blank=True)
+    observaciones = models.TextField(blank=True)
+    estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.PROGRAMADA)
+    creado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="entrevistas_creadas")
+    creada_en = models.DateTimeField(auto_now_add=True)
+    actualizada_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["fecha_hora", "pk"]
+
+    def clean(self):
+        super().clean()
+        if self.postulacion_id and self.postulacion.vacante.organizacion_id != self.postulacion.candidato.organizacion_id:
+            raise ValidationError("La postulación debe pertenecer a una organización válida.")

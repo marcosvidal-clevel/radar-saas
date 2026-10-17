@@ -16,8 +16,8 @@ from django.urls import reverse
 from django.views.decorators.http import require_GET, require_http_methods
 
 from core.models import Membresia, Organizacion
-from .forms import ActualizarPostulacionForm, CandidatoForm, CandidatoVacanteForm, PostulacionForm, VacanteEdicionForm, VacanteForm
-from .models import Candidato, DocumentoCandidato, HistorialEstadoPostulacion, Postulacion, Vacante, guardar_postulacion_con_historial
+from .forms import ActualizarPostulacionForm, CandidatoForm, CandidatoVacanteForm, EntrevistaForm, PostulacionForm, VacanteEdicionForm, VacanteForm
+from .models import Candidato, DocumentoCandidato, Entrevista, HistorialEstadoPostulacion, Postulacion, Vacante, guardar_postulacion_con_historial
 
 
 def _administrador_candidatos():
@@ -416,6 +416,13 @@ def _administrador_seleccion(modelo):
     return admin.site._registry[modelo]
 
 
+def _entrevistas_autorizadas(request):
+    administrador = _administrador_seleccion(Entrevista)
+    if not request.user.has_perm("talento.view_entrevista") or not administrador.has_view_permission(request):
+        return Entrevista.objects.none()
+    return administrador.get_queryset(request).select_related("postulacion__candidato", "postulacion__vacante")
+
+
 def _vacantes_autorizadas(request):
     administrador = _administrador_seleccion(Vacante)
     if not request.user.is_staff or not administrador.has_view_permission(request):
@@ -588,12 +595,71 @@ def nuevo_candidato_vacante(request, pk):
 
 @login_required(login_url="admin:login")
 @require_http_methods(["GET", "POST"])
+def nueva_entrevista(request, pk):
+    postulacion = get_object_or_404(
+        _administrador_seleccion(Postulacion).get_queryset(request).select_related("vacante", "candidato"), pk=pk,
+    )
+    administrador = _administrador_seleccion(Entrevista)
+    if not (request.user.has_perm("talento.view_postulacion") and request.user.has_perm("talento.add_entrevista") and request.user.has_perm("talento.view_entrevista") and _administrador_seleccion(Postulacion).has_view_permission(request, postulacion) and administrador.has_add_permission(request)):
+        raise PermissionDenied("No tienes permiso para crear entrevistas.")
+    formulario = EntrevistaForm(request.POST or None)
+    if request.method == "POST" and formulario.is_valid():
+        entrevista = formulario.save(commit=False)
+        entrevista.postulacion = postulacion
+        entrevista.creado_por = request.user
+        entrevista.save()
+        messages.success(request, "Entrevista creada correctamente.")
+        return redirect("seleccion_detalle_vacante", pk=postulacion.vacante_id)
+    return render(request, "talento/nueva_entrevista.html", {"formulario": formulario, "postulacion": postulacion})
+
+
+@login_required(login_url="admin:login")
+@require_http_methods(["GET", "POST"])
+def editar_entrevista(request, pk):
+    entrevista = get_object_or_404(_entrevistas_autorizadas(request), pk=pk)
+    administrador = _administrador_seleccion(Entrevista)
+    if not request.user.has_perm("talento.change_entrevista") or not administrador.has_change_permission(request, entrevista):
+        raise PermissionDenied("No tienes permiso para editar entrevistas.")
+    formulario = EntrevistaForm(request.POST or None, instance=entrevista)
+    if request.method == "POST" and formulario.is_valid():
+        formulario.save()
+        messages.success(request, "Entrevista actualizada correctamente.")
+        return redirect("seleccion_detalle_vacante", pk=entrevista.postulacion.vacante_id)
+    return render(request, "talento/nueva_entrevista.html", {"formulario": formulario, "postulacion": entrevista.postulacion, "entrevista": entrevista})
+
+
+@login_required(login_url="admin:login")
+@require_GET
+def agenda_entrevistas(request):
+    entrevistas = _entrevistas_autorizadas(request)
+    if not entrevistas.exists():
+        if not request.user.has_perm("talento.view_entrevista"):
+            raise PermissionDenied("No tienes permiso para consultar entrevistas.")
+    estado = request.GET.get("estado", "")
+    estados = {valor for valor, _ in Entrevista.Estado.choices}
+    if estado in estados:
+        entrevistas = entrevistas.filter(estado=estado)
+    else:
+        estado = ""
+    fecha_desde = request.GET.get("desde", "")
+    fecha_hasta = request.GET.get("hasta", "")
+    if fecha_desde:
+        entrevistas = entrevistas.filter(fecha_hora__date__gte=fecha_desde)
+    if fecha_hasta:
+        entrevistas = entrevistas.filter(fecha_hora__date__lte=fecha_hasta)
+    paginator = Paginator(entrevistas.order_by("fecha_hora", "pk"), 20)
+    return render(request, "talento/agenda_entrevistas.html", {"pagina_entrevistas": paginator.get_page(request.GET.get("pagina")), "estado": estado, "desde": fecha_desde, "hasta": fecha_hasta, "estados": Entrevista.Estado.choices})
+
+
+@login_required(login_url="admin:login")
+@require_http_methods(["GET", "POST"])
 def detalle_vacante(request, pk):
     vacante = get_object_or_404(_vacantes_autorizadas(request), pk=pk)
     administrador_vacantes = _administrador_seleccion(Vacante)
     administrador_postulaciones = _administrador_seleccion(Postulacion)
     postulaciones = Postulacion.objects.none()
     puede_postular = False
+    puede_crear_entrevista = False
     formulario = None
     estados_postulacion = Postulacion.Estado.choices
     etapa = request.GET.get("etapa", request.POST.get("etapa", ""))
@@ -624,8 +690,14 @@ def detalle_vacante(request, pk):
         postulaciones = postulaciones_autorizadas.filter(
             estado=etapa,
         ).select_related("candidato", "documento_cv") if etapa else postulaciones_autorizadas.select_related("candidato", "documento_cv")
-        postulaciones = postulaciones.prefetch_related("historial_estados__usuario")
+        postulaciones = postulaciones.prefetch_related("historial_estados__usuario", "entrevistas")
         puede_postular = administrador_postulaciones.has_add_permission(request) and request.user.has_perm("talento.view_candidato")
+        administrador_entrevistas = _administrador_seleccion(Entrevista)
+        puede_crear_entrevista = (
+            request.user.has_perm("talento.view_entrevista")
+            and request.user.has_perm("talento.add_entrevista")
+            and administrador_entrevistas.has_add_permission(request)
+        )
         for postulacion in postulaciones:
             if administrador_postulaciones.has_view_permission(request, postulacion):
                 formulario_actualizacion = ActualizarPostulacionForm(instance=postulacion)
@@ -697,6 +769,7 @@ def detalle_vacante(request, pk):
         "formularios_actualizacion": formularios_actualizacion,
         "puede_postular": puede_postular,
         "puede_consultar_postulaciones": puede_consultar_postulaciones,
+        "puede_crear_entrevista": puede_crear_entrevista,
         "puede_editar_vacante": puede_editar_vacante,
         "estados_postulacion": estados_postulacion,
         "etapa_postulacion": etapa,

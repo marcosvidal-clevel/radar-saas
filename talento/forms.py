@@ -2,7 +2,7 @@ from django import forms
 
 from core.models import EmpresaProspectada, Membresia, Oportunidad, Organizacion
 
-from .models import Candidato, DocumentoCandidato, Postulacion, Vacante
+from .models import Candidato, DocumentoCandidato, Entrevista, Postulacion, Vacante
 
 
 class CandidatoForm(forms.ModelForm):
@@ -200,3 +200,30 @@ class ActualizarPostulacionForm(forms.ModelForm):
         model = Postulacion
         fields = ("estado", "observaciones")
         widgets = {"observaciones": forms.Textarea(attrs={"rows": 4})}
+
+
+class EntrevistaForm(forms.ModelForm):
+    motivo = forms.CharField(
+        required=True,
+        label="Motivo de la entrevista",
+        help_text="Ejemplo: entrevista inicial, técnica, por competencias o con el cliente",
+        error_messages={"required": "El motivo de la entrevista es obligatorio."},
+    )
+
+    class Meta:
+        model = Entrevista
+        fields = ("fecha_hora", "motivo", "entrevistador", "modalidad", "lugar_enlace", "observaciones", "estado")
+        widgets = {
+            "fecha_hora": forms.DateTimeInput(format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local"}),
+            "observaciones": forms.Textarea(attrs={"rows": 4}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["fecha_hora"].input_formats = ["%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S"]
+
+    def clean_motivo(self):
+        motivo = self.cleaned_data.get("motivo", "")
+        if not motivo.strip():
+            raise forms.ValidationError("El motivo de la entrevista es obligatorio.")
+        return motivo.strip()

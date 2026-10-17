@@ -1,5 +1,6 @@
 from tempfile import TemporaryDirectory
 from io import BytesIO
+from datetime import datetime, timezone
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
@@ -9,7 +10,7 @@ from django.urls import reverse
 from docx import Document
 
 from core.models import Membresia, Organizacion
-from .models import Candidato, DocumentoCandidato, HistorialEstadoPostulacion, Postulacion, Vacante
+from .models import Candidato, DocumentoCandidato, Entrevista, HistorialEstadoPostulacion, Postulacion, Vacante
 
 
 class SeleccionVistasTests(TestCase):
@@ -24,7 +25,7 @@ class SeleccionVistasTests(TestCase):
         Membresia.objects.create(usuario=cls.ajeno, organizacion=cls.org_b, rol=Membresia.Rol.SUPERVISOR)
         permisos = Permission.objects.filter(
             content_type__app_label="talento",
-            codename__in=("view_vacante", "add_vacante", "change_vacante", "view_postulacion", "add_postulacion", "change_postulacion", "view_candidato", "add_candidato", "add_documentocandidato", "view_documentocandidato"),
+            codename__in=("view_vacante", "add_vacante", "change_vacante", "view_postulacion", "add_postulacion", "change_postulacion", "view_candidato", "add_candidato", "add_documentocandidato", "view_documentocandidato", "view_entrevista", "add_entrevista", "change_entrevista"),
         )
         cls.usuario.user_permissions.add(*permisos)
         cls.ajeno.user_permissions.add(*permisos)
@@ -343,3 +344,52 @@ class SeleccionVistasTests(TestCase):
         )
         self.client.force_login(self.ajeno)
         self.assertEqual(self.client.get(reverse("seleccion_detalle_vacante", args=[self.vacante.pk])).status_code, 404)
+
+    def test_crea_y_edita_entrevista_sin_cambiar_etapa(self):
+        postulacion = Postulacion.objects.create(vacante=self.vacante, candidato=self.candidato)
+        self.client.force_login(self.usuario)
+        datos = {"fecha_hora": "2030-05-10T15:30", "motivo": " entrevista inicial ", "entrevistador": "Ana", "modalidad": Entrevista.Modalidad.VIDEOLLAMADA, "lugar_enlace": "https://meet.example", "observaciones": "Primera", "estado": Entrevista.Estado.PROGRAMADA}
+        respuesta = self.client.post(reverse("seleccion_nueva_entrevista", args=[postulacion.pk]), datos)
+        self.assertEqual(respuesta.status_code, 302)
+        entrevista = Entrevista.objects.get(postulacion=postulacion)
+        self.assertEqual(postulacion.estado, Postulacion.Estado.RECIBIDA)
+        self.assertEqual(entrevista.creado_por, self.usuario)
+        respuesta = self.client.post(reverse("seleccion_editar_entrevista", args=[entrevista.pk]), {**datos, "estado": Entrevista.Estado.REALIZADA})
+        self.assertEqual(respuesta.status_code, 302)
+        self.assertEqual(Entrevista.objects.get(pk=entrevista.pk).estado, Entrevista.Estado.REALIZADA)
+
+    def test_motivo_obligatorio_y_no_acepta_espacios(self):
+        postulacion = Postulacion.objects.create(vacante=self.vacante, candidato=self.candidato)
+        self.client.force_login(self.usuario)
+        datos = {"fecha_hora": "2030-05-10T15:30", "motivo": "   ", "entrevistador": "Ana", "modalidad": Entrevista.Modalidad.VIDEOLLAMADA, "estado": Entrevista.Estado.PROGRAMADA}
+        respuesta = self.client.post(reverse("seleccion_nueva_entrevista", args=[postulacion.pk]), datos)
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(respuesta, "El motivo de la entrevista es obligatorio.")
+        self.assertContains(respuesta, "   ")
+        self.assertFalse(Entrevista.objects.filter(postulacion=postulacion).exists())
+
+    def test_entrevista_legacy_sin_motivo_se_muestra_sin_inventar(self):
+        postulacion = Postulacion.objects.create(vacante=self.vacante, candidato=self.candidato)
+        Entrevista.objects.create(postulacion=postulacion, creado_por=self.usuario, fecha_hora=datetime(2030, 5, 10, 15, tzinfo=timezone.utc), entrevistador="A", modalidad=Entrevista.Modalidad.PRESENCIAL)
+        self.client.force_login(self.usuario)
+        respuesta = self.client.get(reverse("seleccion_agenda_entrevistas"))
+        self.assertContains(respuesta, "Sin motivo registrado")
+
+    def test_agenda_filtra_ordena_y_a_isla(self):
+        postulacion = Postulacion.objects.create(vacante=self.vacante, candidato=self.candidato)
+        Entrevista.objects.create(postulacion=postulacion, creado_por=self.usuario, fecha_hora=datetime(2030, 5, 11, 15, tzinfo=timezone.utc), entrevistador="B", modalidad=Entrevista.Modalidad.TELEFONO)
+        Entrevista.objects.create(postulacion=postulacion, creado_por=self.usuario, fecha_hora=datetime(2030, 5, 10, 15, tzinfo=timezone.utc), entrevistador="A", modalidad=Entrevista.Modalidad.PRESENCIAL)
+        self.client.force_login(self.usuario)
+        respuesta = self.client.get(reverse("seleccion_agenda_entrevistas"), {"estado": Entrevista.Estado.PROGRAMADA, "desde": "2030-05-10", "hasta": "2030-05-11"})
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(list(respuesta.context["pagina_entrevistas"])[0].entrevistador, "A")
+
+    def test_entrevista_requiere_permiso_y_csrf(self):
+        postulacion = Postulacion.objects.create(vacante=self.vacante, candidato=self.candidato)
+        self.usuario.user_permissions.remove(Permission.objects.get(content_type__app_label="talento", codename="add_entrevista"))
+        self.client.force_login(self.usuario)
+        self.assertEqual(self.client.get(reverse("seleccion_nueva_entrevista", args=[postulacion.pk])).status_code, 403)
+        cliente = self.client_class(enforce_csrf_checks=True)
+        self.usuario.user_permissions.add(Permission.objects.get(content_type__app_label="talento", codename="add_entrevista"))
+        cliente.force_login(self.usuario)
+        self.assertEqual(cliente.post(reverse("seleccion_nueva_entrevista", args=[postulacion.pk]), {"fecha_hora": "2030-05-10T15:30"}).status_code, 403)

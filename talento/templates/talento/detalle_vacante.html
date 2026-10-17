@@ -91,6 +91,8 @@
                         {% if postulacion.historial_estados.all %}<details><summary>Historial de etapas</summary><ul>{% for cambio in postulacion.historial_estados.all %}<li>{{ cambio.get_estado_anterior_display }} → {{ cambio.get_estado_nuevo_display }} · {{ cambio.creado_en|date:"d/m/Y H:i" }}{% if cambio.usuario %} · {{ cambio.usuario.get_username }}{% endif %}</li>{% endfor %}</ul></details>{% endif %}
                       {% else %}{{ postulacion.get_estado_display }}{% endif %}
                     {% endwith %}
+                    {% if puede_crear_entrevista %}<p><a href="{% url 'seleccion_nueva_entrevista' postulacion.pk %}">Nueva entrevista</a></p>{% endif %}
+                    {% if postulacion.entrevistas.all %}<details><summary>Entrevistas</summary><ul>{% for entrevista in postulacion.entrevistas.all %}<li>{{ entrevista.fecha_hora|date:"d/m/Y H:i" }} · {{ entrevista.motivo|default:"Sin motivo registrado" }} · {{ entrevista.get_modalidad_display }} · {{ entrevista.get_estado_display }}{% if entrevista.lugar_enlace %} · {{ entrevista.lugar_enlace }}{% endif %} <a href="{% url 'seleccion_editar_entrevista' entrevista.pk %}">Editar</a></li>{% endfor %}</ul></details>{% endif %}
                   </td>
                   <td>{{ postulacion.get_fuente_display }}</td>
                   <td>{% if postulacion.documento_cv %}CV vigente asociado{% else %}Sin CV{% endif %}</td>
