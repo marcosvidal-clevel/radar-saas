@@ -11,7 +11,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import IntegrityError, transaction
 
 from core.models import Membresia, Organizacion
-from talento.models import Candidato, DocumentoCandidato
+from talento.models import Candidato, CandidatoProcedencia, DocumentoCandidato
 
 
 ALLOWED_SUFFIXES = {".pdf", ".doc", ".docx"}
@@ -165,7 +165,27 @@ class Command(BaseCommand):
                 continue
             digest = _digest(path)
             item["sha256"] = digest
-            if digest in seen_hashes or DocumentoCandidato.objects.filter(
+            procedencia = CandidatoProcedencia.objects.filter(
+                organizacion=organization,
+                origen_importacion=row["origen_importacion"],
+                identificador_origen=row["identificador_origen"],
+            ).first()
+            existing = Candidato.objects.filter(
+                organizacion=organization,
+                origen_importacion=row["origen_importacion"],
+                identificador_origen=row["identificador_origen"],
+            ).first()
+            if procedencia or existing:
+                previous_hash = procedencia.sha256 if procedencia else ""
+                if not previous_hash and existing:
+                    previous_hash = DocumentoCandidato.objects.filter(
+                        candidato=existing, sha256__gt=""
+                    ).values_list("sha256", flat=True).first() or ""
+                if previous_hash == digest:
+                    item["status"], item["error"] = "duplicado", "origen_ya_importado"
+                else:
+                    item["status"], item["error"] = "pendiente_revision", "origen_archivo_diferente"
+            elif digest in seen_hashes or DocumentoCandidato.objects.filter(
                 candidato__organizacion=organization, sha256=digest
             ).exists():
                 item["status"], item["error"] = "duplicado", "sha256_en_organizacion"
@@ -212,6 +232,13 @@ class Command(BaseCommand):
                     document.archivo.save(path.name, File(source), save=False)
                 saved_name = document.archivo.name
                 document.save()
+                CandidatoProcedencia.objects.create(
+                    candidato=candidate,
+                    organizacion=organization,
+                    origen_importacion=row["origen_importacion"],
+                    identificador_origen=row["identificador_origen"],
+                    sha256=item["sha256"],
+                )
         except Exception:
             if saved_name:
                 default_storage.delete(saved_name)

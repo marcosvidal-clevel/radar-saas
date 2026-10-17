@@ -76,6 +76,14 @@ class Candidato(models.Model):
         default=False,
         help_text="Marca explícita para separar datos sintéticos de prueba.",
     )
+    consolidado_en = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="fichas_consolidadas",
+        help_text="Ficha canónica que conserva este registro consolidado.",
+    )
 
     origen_importacion = models.CharField(
         max_length=100,
@@ -120,6 +128,27 @@ class Candidato(models.Model):
 
     def __str__(self):
         return self.nombre
+
+
+class CandidatoProcedencia(models.Model):
+    candidato = models.ForeignKey(
+        Candidato,
+        on_delete=models.PROTECT,
+        related_name="procedencias",
+    )
+    organizacion = models.ForeignKey(Organizacion, on_delete=models.PROTECT)
+    origen_importacion = models.CharField(max_length=100)
+    identificador_origen = models.CharField(max_length=200)
+    sha256 = models.CharField(max_length=64, blank=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("organizacion", "origen_importacion", "identificador_origen"),
+                name="procedencia_unica_por_organizacion_origen_id",
+            ),
+        ]
 
 
 def ruta_documento_candidato(instance, filename):

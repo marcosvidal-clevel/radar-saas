@@ -131,7 +131,7 @@ def candidatos(request):
     queryset = administrador.get_queryset(request).select_related("organizacion")
     incluir_pruebas = request.GET.get("incluir_pruebas") == "1"
     if not incluir_pruebas:
-        queryset = queryset.filter(es_prueba=False)
+        queryset = queryset.filter(es_prueba=False, consolidado_en__isnull=True)
     opciones = {}
     for campo in ("profesion", "especialidad", "region", "estado"):
         opciones[campo] = list(
