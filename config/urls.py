@@ -21,6 +21,7 @@ from talento.views import (
     nueva_entrevista,
     editar_entrevista,
     agenda_entrevistas,
+    agregar_antecedente,
     nueva_vacante,
     vacantes,
     inicio_seleccion,
@@ -61,6 +62,11 @@ urlpatterns = [
         "talento/candidatos/<int:pk>/",
         detalle_candidato,
         name="talento_detalle_candidato",
+    ),
+    path(
+        "talento/candidatos/<int:pk>/antecedentes/agregar/",
+        agregar_antecedente,
+        name="talento_agregar_antecedente",
     ),
     path(
         "talento/candidatos/<int:pk>/coincidencias/",

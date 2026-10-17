@@ -188,6 +188,14 @@ class DocumentoCandidato(models.Model):
         related_name="documentos",
     )
 
+    agregado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="documentos_candidato_agregados",
+    )
+
     tipo = models.CharField(
         max_length=30,
         choices=Tipo.choices,

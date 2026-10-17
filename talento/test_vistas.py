@@ -675,3 +675,110 @@ class VistasTalentoTests(TestCase):
         documento.refresh_from_db()
         self.assertEqual(self.candidato.nombre, nombre_anterior)
         self.assertNotIn("NoDebeGuardar", documento.texto_extraido)
+
+    def antecedentes_datos(self, **extra):
+        contenido = extra.pop("contenido", "Antecedente sintetico")
+        datos = {
+            "nombre": "Título sintético",
+            "tipo": DocumentoCandidato.Tipo.TITULO,
+            "observaciones": "Documento emitido para pruebas.",
+            "archivo": SimpleUploadedFile(
+                "titulo.pdf",
+                self.pdf_sintetico(contenido),
+                content_type="application/pdf",
+            ),
+        }
+        datos.update(extra)
+        return datos
+
+    def test_agrega_antecedente_clasificado_y_no_reemplaza_cv(self):
+        cv = self.crear_documento(self.candidato)
+        self.client.force_login(self.usuario)
+
+        respuesta = self.client.post(
+            reverse("talento_agregar_antecedente", args=[self.candidato.pk]),
+            self.antecedentes_datos(),
+        )
+
+        self.assertEqual(respuesta.status_code, 302)
+        antecedente = self.candidato.documentos.get(tipo=DocumentoCandidato.Tipo.TITULO)
+        self.assertFalse(antecedente.es_cv_principal)
+        self.assertEqual(antecedente.estado_extraccion, DocumentoCandidato.EstadoExtraccion.NO_APLICA)
+        self.assertEqual(antecedente.agregado_por, self.usuario)
+        self.assertIsNotNone(antecedente.creado_en)
+        cv.refresh_from_db()
+        self.assertTrue(cv.es_cv_principal)
+        self.assertEqual(self.candidato.documentos.count(), 2)
+
+    def test_antecedente_acepta_clasificaciones_y_rechaza_evaluacion(self):
+        self.client.force_login(self.usuario)
+        for tipo in (
+            DocumentoCandidato.Tipo.CAPACITACION,
+            DocumentoCandidato.Tipo.CERTIFICACION,
+            DocumentoCandidato.Tipo.RECOMENDACION,
+            DocumentoCandidato.Tipo.EXPERIENCIA,
+            DocumentoCandidato.Tipo.OTRO,
+        ):
+            respuesta = self.client.post(
+                reverse("talento_agregar_antecedente", args=[self.candidato.pk]),
+                self.antecedentes_datos(
+                    tipo=tipo,
+                    nombre=f"Antecedente {tipo}",
+                    contenido=f"Antecedente {tipo}",
+                ),
+            )
+            self.assertEqual(respuesta.status_code, 302)
+        respuesta = self.client.post(
+            reverse("talento_agregar_antecedente", args=[self.candidato.pk]),
+            self.antecedentes_datos(tipo=DocumentoCandidato.Tipo.EVALUACION),
+        )
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(respuesta, "Escoja una opción válida")
+        self.assertFalse(self.candidato.documentos.filter(tipo=DocumentoCandidato.Tipo.EVALUACION).exists())
+
+    def test_antecedente_rechaza_duplicado_por_hash(self):
+        self.client.force_login(self.usuario)
+        datos = self.antecedentes_datos()
+        respuesta = self.client.post(
+            reverse("talento_agregar_antecedente", args=[self.candidato.pk]),
+            datos,
+        )
+        self.assertEqual(respuesta.status_code, 302)
+        cantidad = self.candidato.documentos.count()
+        respuesta = self.client.post(
+            reverse("talento_agregar_antecedente", args=[self.candidato.pk]),
+            self.antecedentes_datos(nombre="Título repetido"),
+        )
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(respuesta, "ya existe en el expediente")
+        self.assertEqual(self.candidato.documentos.count(), cantidad)
+
+    def test_antecedente_exige_permisos_rol_y_aislamiento(self):
+        self.client.force_login(self.usuario_sin_permisos)
+        self.assertEqual(
+            self.client.get(reverse("talento_agregar_antecedente", args=[self.candidato.pk])).status_code,
+            403,
+        )
+        self.client.force_login(self.usuario)
+        self.assertEqual(
+            self.client.get(reverse("talento_agregar_antecedente", args=[self.candidato_ajeno.pk])).status_code,
+            404,
+        )
+        membresia = Membresia.objects.get(usuario=self.usuario)
+        membresia.rol = Membresia.Rol.COLABORADOR
+        membresia.save(update_fields=("rol",))
+        self.assertEqual(
+            self.client.get(reverse("talento_agregar_antecedente", args=[self.candidato.pk])).status_code,
+            403,
+        )
+
+    def test_antecedente_no_permite_manipular_candidato_ni_organizacion(self):
+        self.client.force_login(self.usuario)
+        respuesta = self.client.post(
+            reverse("talento_agregar_antecedente", args=[self.candidato.pk]),
+            self.antecedentes_datos(candidato=self.candidato_ajeno.pk, organizacion=self.organizacion_b.pk),
+        )
+        self.assertEqual(respuesta.status_code, 302)
+        antecedente = self.candidato.documentos.get()
+        self.assertEqual(antecedente.candidato_id, self.candidato.pk)
+        self.assertFalse(self.candidato_ajeno.documentos.exists())

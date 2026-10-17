@@ -43,7 +43,7 @@
     {% if messages %}{% for mensaje in messages %}<div style="background:#eaf7f1;border-left:4px solid #19836a;padding:12px 16px;margin-bottom:18px" role="status">{{ mensaje }}</div>{% endfor %}{% endif %}
     <h1>{{ candidato.nombre }}</h1>
     <p class="subtitulo">{{ candidato.organizacion.nombre }}</p>
-    {% if puede_editar %}<p><a class="boton" href="{% url 'talento_editar_candidato' candidato.pk %}">Editar candidato</a></p>{% endif %}
+    {% if puede_editar or puede_agregar_antecedente %}<p>{% if puede_editar %}<a class="boton" href="{% url 'talento_editar_candidato' candidato.pk %}">Editar candidato</a>{% endif %} {% if puede_agregar_antecedente %}<a class="boton" href="{% url 'talento_agregar_antecedente' candidato.pk %}">Agregar antecedente</a>{% endif %}</p>{% endif %}
     <div class="rejilla">
       <section class="tarjeta"><h2>Contacto</h2><dl>
         <dt>Correo</dt><dd>{{ candidato.email|default:"—" }}</dd>

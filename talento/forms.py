@@ -1,3 +1,5 @@
+import hashlib
+
 from django import forms
 
 from core.models import EmpresaProspectada, Membresia, Oportunidad, Organizacion
@@ -100,6 +102,69 @@ class CandidatoVacanteForm(forms.ModelForm):
                 raise forms.ValidationError("El CV debe ser un archivo PDF, DOC o DOCX.")
             if archivo.size > 10 * 1024 * 1024:
                 raise forms.ValidationError("El CV no puede superar los 10 MB.")
+        return archivo
+
+
+class DocumentoAntecedenteForm(forms.ModelForm):
+    class Meta:
+        model = DocumentoCandidato
+        fields = ("nombre", "tipo", "archivo", "observaciones")
+        widgets = {
+            "observaciones": forms.Textarea(attrs={"rows": 4}),
+        }
+        labels = {
+            "nombre": "Nombre del documento",
+            "tipo": "Clasificación",
+            "archivo": "Archivo",
+            "observaciones": "Observaciones",
+        }
+
+    TIPOS_ANTECEDENTE = {
+        DocumentoCandidato.Tipo.TITULO,
+        DocumentoCandidato.Tipo.CAPACITACION,
+        DocumentoCandidato.Tipo.CERTIFICACION,
+        DocumentoCandidato.Tipo.RECOMENDACION,
+        DocumentoCandidato.Tipo.EXPERIENCIA,
+        DocumentoCandidato.Tipo.OTRO,
+    }
+
+    def __init__(self, *args, candidato=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.candidato = candidato
+        self.fields["tipo"].choices = [
+            choice for choice in self.fields["tipo"].choices
+            if choice[0] in self.TIPOS_ANTECEDENTE
+        ]
+
+    def clean_tipo(self):
+        tipo = self.cleaned_data["tipo"]
+        if tipo not in self.TIPOS_ANTECEDENTE:
+            raise forms.ValidationError(
+                "Selecciona una clasificación de antecedente válida."
+            )
+        return tipo
+
+    def clean_archivo(self):
+        archivo = self.cleaned_data["archivo"]
+        extension = archivo.name.rsplit(".", 1)[-1].lower()
+        if extension not in {"pdf", "doc", "docx"}:
+            raise forms.ValidationError(
+                "El archivo debe ser PDF, DOC o DOCX."
+            )
+        if archivo.size > 10 * 1024 * 1024:
+            raise forms.ValidationError(
+                "El archivo no puede superar los 10 MB."
+            )
+        digest = hashlib.sha256()
+        for chunk in archivo.chunks():
+            digest.update(chunk)
+        archivo.seek(0)
+        if self.candidato and self.candidato.documentos.filter(
+            sha256=digest.hexdigest(),
+        ).exists():
+            raise forms.ValidationError(
+                "Este archivo ya existe en el expediente del candidato."
+            )
         return archivo
 
 

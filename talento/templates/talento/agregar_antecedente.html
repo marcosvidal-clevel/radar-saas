@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="es-CL">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agregar antecedente | {{ candidato.nombre }} | RADAR</title>
+  <style>
+    body { margin:0; background:#f3f5f8; color:#182b3a; font-family:Arial,sans-serif; line-height:1.5; }
+    main { max-width:760px; margin:auto; padding:32px 24px; }
+    .tarjeta { background:white; border:1px solid #dce3ea; border-radius:12px; padding:24px; }
+    label { display:block; font-weight:bold; margin-top:16px; }
+    input, select, textarea { width:100%; box-sizing:border-box; padding:10px; margin-top:6px; font:inherit; }
+    button, a { display:inline-block; margin-top:20px; padding:10px 16px; border-radius:8px; }
+    button { background:#164b63; color:white; border:0; cursor:pointer; }
+    a { color:#164b63; }
+    .errorlist { color:#8f2230; }
+  </style>
+</head>
+<body>
+  <main>
+    <a href="{% url 'talento_detalle_candidato' candidato.pk %}">← Volver a la ficha</a>
+    <section class="tarjeta">
+      <h1>Agregar antecedente</h1>
+      <p>Candidato: <strong>{{ candidato.nombre }}</strong><br>Organización: {{ candidato.organizacion.nombre }}</p>
+      <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        {{ formulario.non_field_errors }}
+        {% for campo in formulario %}
+          <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+          {{ campo }}
+          {{ campo.errors }}
+          {% if campo.help_text %}<small>{{ campo.help_text }}</small>{% endif %}
+        {% endfor %}
+        <button type="submit">Guardar antecedente</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

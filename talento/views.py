@@ -17,7 +17,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods
 
 from core.models import Membresia, Organizacion
-from .forms import ActualizarPostulacionForm, CandidatoForm, CandidatoVacanteForm, EntrevistaForm, PostulacionForm, VacanteEdicionForm, VacanteForm
+from .forms import ActualizarPostulacionForm, CandidatoForm, CandidatoVacanteForm, DocumentoAntecedenteForm, EntrevistaForm, PostulacionForm, VacanteEdicionForm, VacanteForm
 from .models import Candidato, DocumentoCandidato, Entrevista, HistorialEstadoPostulacion, Postulacion, Vacante, guardar_postulacion_con_historial
 from .busqueda_asistida import (
     LIMITE_CONSULTA,
@@ -139,6 +139,21 @@ def _validar_permisos_cv(request, candidato, administrador_documentos):
             raise PermissionDenied(
                 "No tienes permiso para actualizar los documentos del candidato."
             )
+
+
+def _puede_agregar_antecedente(request, candidato):
+    return (
+        request.user.is_staff
+        and request.user.has_perm("talento.view_candidato")
+        and request.user.has_perm("talento.add_documentocandidato")
+        and Membresia.objects.filter(
+            usuario=request.user,
+            organizacion_id=candidato.organizacion_id,
+            organizacion__activa=True,
+            activa=True,
+            rol__in=(Membresia.Rol.ADMINISTRADOR, Membresia.Rol.SUPERVISOR),
+        ).exists()
+    )
 
 
 @login_required(login_url="admin:login")
@@ -374,6 +389,7 @@ def detalle_candidato(request, pk):
         raise PermissionDenied("No tienes acceso a este candidato.")
 
     puede_editar = administrador.has_change_permission(request, candidato)
+    puede_agregar_antecedente = _puede_agregar_antecedente(request, candidato)
 
     return render(
         request,
@@ -388,7 +404,67 @@ def detalle_candidato(request, pk):
                 candidato,
             ).filter(vigente=False),
             "puede_editar": puede_editar,
+            "puede_agregar_antecedente": puede_agregar_antecedente,
         },
+    )
+
+
+@login_required(login_url="admin:login")
+@require_http_methods(["GET", "POST"])
+def agregar_antecedente(request, pk):
+    administrador_candidatos = _administrador_candidatos()
+    administrador_documentos = admin.site._registry[DocumentoCandidato]
+
+    if not request.user.is_staff or not administrador_candidatos.has_view_permission(request):
+        raise PermissionDenied("No tienes permiso para consultar candidatos.")
+    candidato = get_object_or_404(
+        administrador_candidatos.get_queryset(request).select_related("organizacion"),
+        pk=pk,
+    )
+    if not administrador_candidatos.has_view_permission(request, candidato):
+        raise PermissionDenied("No tienes permiso para consultar este candidato.")
+    if not administrador_documentos.has_add_permission(request):
+        raise PermissionDenied("No tienes permiso para agregar documentos de candidatos.")
+    if not _puede_agregar_antecedente(request, candidato):
+        raise PermissionDenied("No tienes un rol de gestión activo en esta organización.")
+
+    formulario = DocumentoAntecedenteForm(
+        request.POST or None,
+        request.FILES or None,
+        candidato=candidato,
+    )
+    if request.method == "POST" and formulario.is_valid():
+        archivo = formulario.cleaned_data["archivo"]
+        documento = formulario.save(commit=False)
+        documento.candidato = candidato
+        documento.agregado_por = request.user
+        documento.es_cv_principal = False
+        documento.vigente = True
+        documento.pendiente_clasificacion = False
+        archivos_nuevos = []
+        try:
+            with transaction.atomic():
+                documento.save()
+                archivos_nuevos.append(
+                    (documento.archivo.storage, documento.archivo.name)
+                )
+        except Exception as error:
+            for storage, nombre in archivos_nuevos:
+                storage.delete(nombre)
+            if hasattr(error, "message_dict"):
+                for campo, errores in error.message_dict.items():
+                    for mensaje in errores:
+                        formulario.add_error(campo, mensaje)
+            else:
+                formulario.add_error(None, "No se pudo guardar el antecedente.")
+        else:
+            messages.success(request, "Antecedente agregado correctamente.")
+            return redirect("talento_detalle_candidato", pk=candidato.pk)
+
+    return render(
+        request,
+        "talento/agregar_antecedente.html",
+        {"formulario": formulario, "candidato": candidato},
     )
 
 
