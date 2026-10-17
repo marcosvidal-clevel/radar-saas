@@ -429,3 +429,9 @@ class SeleccionVistasTests(TestCase):
         self.usuario.user_permissions.add(Permission.objects.get(content_type__app_label="talento", codename="add_entrevista"))
         cliente.force_login(self.usuario)
         self.assertEqual(cliente.post(reverse("seleccion_nueva_entrevista", args=[postulacion.pk]), {"fecha_hora": "2030-05-10T15:30"}).status_code, 403)
+
+    def test_agenda_rechaza_usuario_sin_membresia_autorizada(self):
+        self.org_b.activa = False
+        self.org_b.save(update_fields=("activa",))
+        self.client.force_login(self.ajeno)
+        self.assertEqual(self.client.get(reverse("seleccion_agenda_entrevistas")).status_code, 403)

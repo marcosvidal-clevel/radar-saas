@@ -631,10 +631,12 @@ def editar_entrevista(request, pk):
 @login_required(login_url="admin:login")
 @require_GET
 def agenda_entrevistas(request):
-    entrevistas = _entrevistas_autorizadas(request)
-    if not entrevistas.exists():
-        if not request.user.has_perm("talento.view_entrevista"):
-            raise PermissionDenied("No tienes permiso para consultar entrevistas.")
+    administrador = _administrador_seleccion(Entrevista)
+    if not request.user.has_perm("talento.view_entrevista") or not administrador.has_view_permission(request):
+        raise PermissionDenied("No tienes permiso para consultar entrevistas.")
+    entrevistas = administrador.get_queryset(request).select_related(
+        "postulacion__candidato", "postulacion__vacante",
+    )
     estado = request.GET.get("estado", "")
     estados = {valor for valor, _ in Entrevista.Estado.choices}
     if estado in estados:
