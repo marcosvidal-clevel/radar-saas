@@ -129,6 +129,9 @@ def candidatos(request):
         raise PermissionDenied("No tienes acceso a Talento.")
 
     queryset = administrador.get_queryset(request).select_related("organizacion")
+    incluir_pruebas = request.GET.get("incluir_pruebas") == "1"
+    if not incluir_pruebas:
+        queryset = queryset.filter(es_prueba=False)
     opciones = {}
     for campo in ("profesion", "especialidad", "region", "estado"):
         opciones[campo] = list(
@@ -160,6 +163,8 @@ def candidatos(request):
     pagina = paginador.get_page(request.GET.get("pagina"))
 
     parametros = {"q": busqueda} if busqueda else {}
+    if incluir_pruebas:
+        parametros["incluir_pruebas"] = "1"
     parametros.update(filtros)
     estados = dict(Candidato.Estado.choices)
 
@@ -184,6 +189,7 @@ def candidatos(request):
             "parametros_filtros": urlencode(parametros),
             "total_resultados": paginador.count,
             "hay_filtros": bool(parametros),
+            "incluir_pruebas": incluir_pruebas,
         },
     )
 

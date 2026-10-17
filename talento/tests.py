@@ -5,6 +5,7 @@ from django.contrib.auth.models import Group, Permission
 from django.core.exceptions import PermissionDenied
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import RequestFactory, TestCase
+from django.urls import reverse
 
 from core.models import Membresia, Organizacion
 from .models import Candidato, DocumentoCandidato
@@ -99,6 +100,11 @@ class SeguridadCandidatosTests(TestCase):
             organizacion=cls.organizacion_b,
             nombre="Candidato Empresa B",
         )
+        cls.candidato_prueba = Candidato.objects.create(
+            organizacion=cls.organizacion_a,
+            nombre="Ficha sintética de prueba",
+            es_prueba=True,
+        )
 
     def setUp(self):
         self.factory = RequestFactory()
@@ -177,6 +183,38 @@ class SeguridadCandidatosTests(TestCase):
         self.assertFalse(
             self.administracion.has_add_permission(
                 self.solicitud(self.colaborador)
+            )
+        )
+
+    def test_listado_excluye_pruebas_y_permite_incluirlas(self):
+        self.client.force_login(self.administrador)
+
+        respuesta = self.client.get(reverse("talento_candidatos"))
+        self.assertNotContains(respuesta, self.candidato_prueba.nombre)
+
+        respuesta = self.client.get(
+            reverse("talento_candidatos"),
+            {"incluir_pruebas": "1"},
+        )
+        self.assertContains(respuesta, self.candidato_prueba.nombre)
+
+    def test_marca_prueba_solo_es_editable_por_gestion(self):
+        self.assertTrue(
+            self.administracion.has_change_permission(
+                self.solicitud(self.administrador),
+                self.candidato_prueba,
+            )
+        )
+        self.assertTrue(
+            self.administracion.has_change_permission(
+                self.solicitud(self.supervisor),
+                self.candidato_prueba,
+            )
+        )
+        self.assertFalse(
+            self.administracion.has_change_permission(
+                self.solicitud(self.colaborador),
+                self.candidato_prueba,
             )
         )
 

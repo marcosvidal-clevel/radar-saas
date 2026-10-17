@@ -72,6 +72,10 @@ class Candidato(models.Model):
 
     notas = models.TextField(blank=True)
     activo = models.BooleanField(default=True)
+    es_prueba = models.BooleanField(
+        default=False,
+        help_text="Marca explícita para separar datos sintéticos de prueba.",
+    )
 
     origen_importacion = models.CharField(
         max_length=100,

@@ -56,7 +56,7 @@
         <div class="campo"><label for="especialidad">Especialidad</label><select id="especialidad" name="especialidad"><option value="">Todas</option>{% for opcion in opciones_especialidad %}<option value="{{ opcion }}"{% if filtro_especialidad == opcion %} selected{% endif %}>{{ opcion }}</option>{% endfor %}</select></div>
         <div class="campo"><label for="region">Región</label><select id="region" name="region"><option value="">Todas</option>{% for opcion in opciones_region %}<option value="{{ opcion }}"{% if filtro_region == opcion %} selected{% endif %}>{{ opcion }}</option>{% endfor %}</select></div>
         <div class="campo"><label for="estado">Estado</label><select id="estado" name="estado"><option value="">Todos</option>{% for valor, etiqueta in opciones_estado %}<option value="{{ valor }}"{% if filtro_estado == valor %} selected{% endif %}>{{ etiqueta }}</option>{% endfor %}</select></div>
-        <div class="acciones-filtros"><button type="submit">Buscar</button>{% if hay_filtros %}<a class="boton boton-secundario" href="{% url 'talento_candidatos' %}">Limpiar</a>{% endif %}</div>
+        <div class="acciones-filtros"><label><input type="checkbox" name="incluir_pruebas" value="1"{% if incluir_pruebas %} checked{% endif %}> Incluir fichas de prueba</label> <button type="submit">Buscar</button>{% if hay_filtros %}<a class="boton boton-secundario" href="{% url 'talento_candidatos' %}">Limpiar</a>{% endif %}</div>
       </form>
     </section>
     <section class="seccion" aria-labelledby="titulo-resultados">

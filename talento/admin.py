@@ -31,6 +31,7 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
         "estado",
         "fuente",
         "activo",
+        "es_prueba",
     )
 
     list_filter = (
@@ -139,6 +140,7 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
                     "estado",
                     "notas",
                     "activo",
+                    "es_prueba",
                 )
             },
         ),

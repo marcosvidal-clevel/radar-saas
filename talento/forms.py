@@ -32,6 +32,7 @@ class CandidatoForm(forms.ModelForm):
             "estado",
             "notas",
             "activo",
+            "es_prueba",
             "cv",
         )
         widgets = {
