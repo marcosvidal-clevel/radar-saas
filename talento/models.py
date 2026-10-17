@@ -1,4 +1,5 @@
 
+import hashlib
 import uuid
 from pathlib import Path
 
@@ -72,6 +73,17 @@ class Candidato(models.Model):
     notas = models.TextField(blank=True)
     activo = models.BooleanField(default=True)
 
+    origen_importacion = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Fuente externa de la importación, si corresponde.",
+    )
+    identificador_origen = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="Identificador estable entregado por la fuente.",
+    )
+
     creado_en = models.DateTimeField(auto_now_add=True)
     actualizado_en = models.DateTimeField(auto_now=True)
 
@@ -79,6 +91,16 @@ class Candidato(models.Model):
         verbose_name = "Candidato"
         verbose_name_plural = "Candidatos"
         ordering = ["nombre"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("organizacion", "origen_importacion", "identificador_origen"),
+                condition=models.Q(
+                    origen_importacion__gt="",
+                    identificador_origen__gt="",
+                ),
+                name="candidato_origen_unico_por_organizacion",
+            ),
+        ]
 
     def clean(self):
         super().clean()
@@ -168,6 +190,13 @@ class DocumentoCandidato(models.Model):
         editable=False,
     )
 
+    sha256 = models.CharField(
+        max_length=64,
+        blank=True,
+        editable=False,
+        db_index=True,
+    )
+
     creado_en = models.DateTimeField(auto_now_add=True)
     actualizado_en = models.DateTimeField(auto_now=True)
 
@@ -236,9 +265,25 @@ class DocumentoCandidato(models.Model):
         resultado = super().save(*args, **kwargs)
 
         if archivo_cambio or tipo_cambio:
+            self._actualizar_sha256()
             self.extraer_texto()
 
         return resultado
+
+    def _actualizar_sha256(self):
+        """Calcula la huella del archivo ya persistido, sin leerlo en logs."""
+        digest = ""
+        if self.archivo:
+            try:
+                hasher = hashlib.sha256()
+                with self.archivo.open("rb") as archivo:
+                    for chunk in iter(lambda: archivo.read(1024 * 1024), b""):
+                        hasher.update(chunk)
+                digest = hasher.hexdigest()
+            except OSError:
+                digest = ""
+        self.sha256 = digest
+        type(self).objects.filter(pk=self.pk).update(sha256=digest)
 
     def extraer_texto(self):
         """Actualiza únicamente el texto y su estado, sin guardar el archivo."""
