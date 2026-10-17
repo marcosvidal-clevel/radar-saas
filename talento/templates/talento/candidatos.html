@@ -17,8 +17,10 @@
     h1 { margin:0 0 6px; font-size:30px; }
     .subtitulo { margin:0 0 24px; color:var(--secundario); }
     .filtros, .seccion { background:white; border:1px solid var(--borde); border-radius:12px; padding:20px 22px; margin-bottom:24px; }
-    .filtros form { display:flex; gap:10px; flex-wrap:wrap; }
-    input { flex:1 1 400px; min-height:44px; padding:10px; border:1px solid #aab8c4; border-radius:8px; font:inherit; }
+    .filtros form { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+    .campo-busqueda, .acciones-filtros { grid-column:1 / -1; }
+    .campo label { display:block; color:var(--secundario); font-size:14px; margin-bottom:5px; }
+    input, select { width:100%; min-height:44px; padding:10px; border:1px solid #aab8c4; border-radius:8px; font:inherit; background:white; }
     button, .boton { display:inline-block; background:var(--azul); color:white; border:1px solid var(--azul); border-radius:8px; padding:10px 18px; font:inherit; text-decoration:none; }
     .boton-secundario { background:white; color:var(--azul); border-color:var(--borde); }
     table { border-collapse:collapse; width:100%; }
@@ -27,7 +29,8 @@
     tr:last-child td { border-bottom:0; }
     .vacio { color:var(--secundario); }
     .paginacion { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:center; border-top:1px solid var(--borde); padding-top:18px; margin-top:18px; }
-    @media (max-width:650px) { main { padding:24px 14px; } .barra { padding:16px; } table { display:block; overflow-x:auto; } }
+    @media (max-width:800px) { .filtros form { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+    @media (max-width:650px) { main { padding:24px 14px; } .barra { padding:16px; } .filtros form { grid-template-columns:1fr; } table { display:block; overflow-x:auto; } }
   </style>
 </head>
 <body>
@@ -48,14 +51,16 @@
     <section class="filtros" aria-labelledby="titulo-busqueda">
       <h2 id="titulo-busqueda">Buscar candidatos</h2>
       <form method="get" action="{% url 'talento_candidatos' %}">
-        <label for="busqueda" class="sr-only">Nombre, perfil o contenido del CV</label>
-        <input id="busqueda" type="search" name="q" value="{{ busqueda }}" maxlength="200" placeholder="Nombre, profesión, competencias o contenido del CV">
-        <button type="submit">Buscar</button>
-        {% if busqueda %}<a class="boton boton-secundario" href="{% url 'talento_candidatos' %}">Limpiar</a>{% endif %}
+        <div class="campo campo-busqueda"><label for="busqueda">Buscar por texto</label><input id="busqueda" type="search" name="q" value="{{ busqueda }}" maxlength="200" placeholder="Nombre, profesión, competencias o contenido del CV"></div>
+        <div class="campo"><label for="profesion">Profesión</label><select id="profesion" name="profesion"><option value="">Todas</option>{% for opcion in opciones_profesion %}<option value="{{ opcion }}"{% if filtro_profesion == opcion %} selected{% endif %}>{{ opcion }}</option>{% endfor %}</select></div>
+        <div class="campo"><label for="especialidad">Especialidad</label><select id="especialidad" name="especialidad"><option value="">Todas</option>{% for opcion in opciones_especialidad %}<option value="{{ opcion }}"{% if filtro_especialidad == opcion %} selected{% endif %}>{{ opcion }}</option>{% endfor %}</select></div>
+        <div class="campo"><label for="region">Región</label><select id="region" name="region"><option value="">Todas</option>{% for opcion in opciones_region %}<option value="{{ opcion }}"{% if filtro_region == opcion %} selected{% endif %}>{{ opcion }}</option>{% endfor %}</select></div>
+        <div class="campo"><label for="estado">Estado</label><select id="estado" name="estado"><option value="">Todos</option>{% for valor, etiqueta in opciones_estado %}<option value="{{ valor }}"{% if filtro_estado == valor %} selected{% endif %}>{{ etiqueta }}</option>{% endfor %}</select></div>
+        <div class="acciones-filtros"><button type="submit">Buscar</button>{% if hay_filtros %}<a class="boton boton-secundario" href="{% url 'talento_candidatos' %}">Limpiar</a>{% endif %}</div>
       </form>
     </section>
     <section class="seccion" aria-labelledby="titulo-resultados">
-      <h2 id="titulo-resultados">Resultados</h2>
+      <h2 id="titulo-resultados">Resultados <span style="color:var(--secundario);font-size:15px;font-weight:normal">({{ total_resultados }})</span></h2>
       {% if pagina_candidatos.object_list %}
         <table>
           <thead><tr><th>Candidato</th><th>Profesión</th><th>Ubicación</th><th>Estado</th></tr></thead>
@@ -73,8 +78,8 @@
         <div class="paginacion">
           <span>Página {{ pagina_candidatos.number }} de {{ pagina_candidatos.paginator.num_pages }}</span>
           <span>
-            {% if pagina_candidatos.has_previous %}<a class="boton boton-secundario" href="?q={{ busqueda|urlencode }}&pagina={{ pagina_candidatos.previous_page_number }}">Anterior</a>{% endif %}
-            {% if pagina_candidatos.has_next %}<a class="boton" href="?q={{ busqueda|urlencode }}&pagina={{ pagina_candidatos.next_page_number }}">Siguiente</a>{% endif %}
+            {% if pagina_candidatos.has_previous %}<a class="boton boton-secundario" href="?{{ parametros_filtros }}{% if parametros_filtros %}&{% endif %}pagina={{ pagina_candidatos.previous_page_number }}">Anterior</a>{% endif %}
+            {% if pagina_candidatos.has_next %}<a class="boton" href="?{{ parametros_filtros }}{% if parametros_filtros %}&{% endif %}pagina={{ pagina_candidatos.next_page_number }}">Siguiente</a>{% endif %}
           </span>
         </div>
       {% else %}<p class="vacio">No se encontraron candidatos.</p>{% endif %}

@@ -320,6 +320,104 @@ class VistasTalentoTests(TestCase):
         )
         self.assertEqual(respuesta.status_code, 403)
 
+    def test_filtro_individual_por_profesion(self):
+        Candidato.objects.create(
+            organizacion=self.organizacion_a,
+            nombre="Candidato Arquitectura",
+            profesion="Arquitecto",
+        )
+        self.client.force_login(self.usuario)
+
+        respuesta = self.client.get(
+            reverse("talento_candidatos"), {"profesion": "Arquitecto"}
+        )
+
+        self.assertContains(respuesta, "Candidato Arquitectura")
+        self.assertNotContains(respuesta, "Candidato Zafiro")
+        self.assertContains(respuesta, "Arquitecto")
+
+    def test_filtros_combinados_con_texto_y_estado(self):
+        Candidato.objects.create(
+            organizacion=self.organizacion_a,
+            nombre="Candidato Senior",
+            profesion="Ingeniero civil",
+            especialidad="Estructuras",
+            region="Valparaíso",
+            estado=Candidato.Estado.CONTRATADO,
+        )
+        self.client.force_login(self.usuario)
+
+        respuesta = self.client.get(
+            reverse("talento_candidatos"),
+            {
+                "q": "Senior",
+                "profesion": "Ingeniero civil",
+                "especialidad": "Estructuras",
+                "region": "Valparaíso",
+                "estado": Candidato.Estado.CONTRATADO,
+            },
+        )
+
+        self.assertContains(respuesta, "Candidato Senior")
+        self.assertNotContains(respuesta, "Candidato Zafiro")
+        self.assertEqual(
+            respuesta.context["parametros_filtros"],
+            "q=Senior&profesion=Ingeniero+civil&especialidad=Estructuras&region=Valpara%C3%ADso&estado=contratado",
+        )
+
+    def test_opciones_y_resultados_excluyen_otra_organizacion(self):
+        self.candidato_ajeno.profesion = "Profesión ajena"
+        self.candidato_ajeno.especialidad = "Especialidad ajena"
+        self.candidato_ajeno.region = "Región ajena"
+        self.candidato_ajeno.save()
+        self.client.force_login(self.usuario)
+
+        respuesta = self.client.get(reverse("talento_candidatos"))
+
+        self.assertNotContains(respuesta, "Candidato Rubí")
+        self.assertNotContains(respuesta, "Profesión ajena")
+        self.assertNotContains(respuesta, "Especialidad ajena")
+        self.assertNotContains(respuesta, "Región ajena")
+
+    def test_valor_invalido_se_ignora_y_no_amplia_resultados(self):
+        self.client.force_login(self.usuario)
+
+        respuesta = self.client.get(
+            reverse("talento_candidatos"), {"profesion": "No autorizada"}
+        )
+
+        self.assertContains(respuesta, self.candidato.nombre)
+        self.assertNotContains(respuesta, "No autorizada")
+
+    def test_filtros_conservan_total_y_parametros_en_paginacion(self):
+        Candidato.objects.bulk_create([
+            Candidato(
+                organizacion=self.organizacion_a,
+                nombre=f"Ingeniero {numero:02d}",
+                profesion="Ingeniero civil",
+            )
+            for numero in range(21)
+        ])
+        self.client.force_login(self.usuario)
+
+        respuesta = self.client.get(
+            reverse("talento_candidatos"),
+            {"profesion": "Ingeniero civil", "pagina": 2},
+        )
+
+        self.assertEqual(respuesta.context["total_resultados"], 22)
+        self.assertEqual(len(respuesta.context["pagina_candidatos"]), 2)
+        self.assertContains(respuesta, "profesion=Ingeniero+civil&pagina=1")
+
+    def test_limpiar_elimina_todos_los_filtros(self):
+        self.client.force_login(self.usuario)
+        respuesta = self.client.get(
+            reverse("talento_candidatos"),
+            {"q": "Zafiro", "profesion": "Ingeniero civil"},
+        )
+        self.assertContains(respuesta, "Limpiar")
+        self.assertContains(respuesta, "(1)")
+
     def datos_edicion(self, **extras):
         datos = {
             "organizacion": self.organizacion_a.pk,

@@ -1,5 +1,6 @@
 
 from pathlib import Path
+from urllib.parse import urlencode
 
 from django.contrib import admin
 from django.contrib.auth.decorators import login_required
@@ -124,6 +125,15 @@ def candidatos(request):
         raise PermissionDenied("No tienes acceso a Talento.")
 
     queryset = administrador.get_queryset(request).select_related("organizacion")
+    opciones = {}
+    for campo in ("profesion", "especialidad", "region", "estado"):
+        opciones[campo] = list(
+            queryset.exclude(**{campo: ""})
+            .values_list(campo, flat=True)
+            .distinct()
+            .order_by(campo)
+        )
+
     busqueda = request.GET.get("q", "").strip()[:200]
     if busqueda:
         queryset, _ = administrador.get_search_results(
@@ -132,9 +142,22 @@ def candidatos(request):
             busqueda,
         )
 
+    filtros = {}
+    for campo in opciones:
+        valor = request.GET.get(campo, "").strip()
+        if valor in set(opciones[campo]):
+            filtros[campo] = valor
+
+    for campo, valor in filtros.items():
+        queryset = queryset.filter(**{campo: valor})
+
     queryset = queryset.order_by("nombre", "pk").distinct()
     paginador = Paginator(queryset, 20)
     pagina = paginador.get_page(request.GET.get("pagina"))
+
+    parametros = {"q": busqueda} if busqueda else {}
+    parametros.update(filtros)
+    estados = dict(Candidato.Estado.choices)
 
     return render(
         request,
@@ -143,6 +166,20 @@ def candidatos(request):
             "pagina_candidatos": pagina,
             "busqueda": busqueda,
             "puede_crear": administrador.has_add_permission(request),
+            "opciones_profesion": opciones["profesion"],
+            "opciones_especialidad": opciones["especialidad"],
+            "opciones_region": opciones["region"],
+            "opciones_estado": [
+                (valor, estados[valor])
+                for valor in opciones["estado"]
+            ],
+            "filtro_profesion": filtros.get("profesion", ""),
+            "filtro_especialidad": filtros.get("especialidad", ""),
+            "filtro_region": filtros.get("region", ""),
+            "filtro_estado": filtros.get("estado", ""),
+            "parametros_filtros": urlencode(parametros),
+            "total_resultados": paginador.count,
+            "hay_filtros": bool(parametros),
         },
     )
 
