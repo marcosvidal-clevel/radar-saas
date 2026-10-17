@@ -212,11 +212,13 @@ class EntrevistaForm(forms.ModelForm):
 
     class Meta:
         model = Entrevista
-        fields = ("fecha_hora", "motivo", "entrevistador", "modalidad", "lugar_enlace", "observaciones", "estado")
+        fields = ("fecha_hora", "motivo", "entrevistador", "modalidad", "lugar_enlace", "observaciones", "estado", "resultado", "recomendacion")
         widgets = {
             "fecha_hora": forms.DateTimeInput(format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local"}),
             "observaciones": forms.Textarea(attrs={"rows": 4}),
+            "resultado": forms.Textarea(attrs={"rows": 4}),
         }
+        labels = {"resultado": "Resumen del resultado", "recomendacion": "Recomendación"}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -227,3 +229,12 @@ class EntrevistaForm(forms.ModelForm):
         if not motivo.strip():
             raise forms.ValidationError("El motivo de la entrevista es obligatorio.")
         return motivo.strip()
+
+    def clean(self):
+        datos = super().clean()
+        if datos.get("estado") == Entrevista.Estado.REALIZADA:
+            if not datos.get("resultado", "").strip():
+                self.add_error("resultado", "El resumen del resultado es obligatorio al marcar la entrevista como realizada.")
+            if datos.get("recomendacion") in (None, "", Entrevista.Recomendacion.PENDIENTE):
+                self.add_error("recomendacion", "Selecciona una recomendación distinta de Pendiente al marcar la entrevista como realizada.")
+        return datos

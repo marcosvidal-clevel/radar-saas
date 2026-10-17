@@ -526,6 +526,12 @@ class Entrevista(models.Model):
         REALIZADA = "realizada", "Realizada"
         CANCELADA = "cancelada", "Cancelada"
 
+    class Recomendacion(models.TextChoices):
+        PENDIENTE = "pendiente", "Pendiente"
+        CONTINUAR = "continuar", "Continuar"
+        NO_CONTINUAR = "no_continuar", "No continuar"
+        RESERVA = "reserva", "Mantener en reserva"
+
     postulacion = models.ForeignKey(Postulacion, on_delete=models.CASCADE, related_name="entrevistas")
     fecha_hora = models.DateTimeField()
     motivo = models.CharField(max_length=200, blank=True, null=True)
@@ -534,6 +540,8 @@ class Entrevista(models.Model):
     lugar_enlace = models.CharField(max_length=500, blank=True)
     observaciones = models.TextField(blank=True)
     estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.PROGRAMADA)
+    resultado = models.TextField(blank=True, null=True)
+    recomendacion = models.CharField(max_length=20, choices=Recomendacion.choices, blank=True, null=True)
     creado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="entrevistas_creadas")
     creada_en = models.DateTimeField(auto_now_add=True)
     actualizada_en = models.DateTimeField(auto_now=True)

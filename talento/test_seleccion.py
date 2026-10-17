@@ -348,7 +348,7 @@ class SeleccionVistasTests(TestCase):
     def test_crea_y_edita_entrevista_sin_cambiar_etapa(self):
         postulacion = Postulacion.objects.create(vacante=self.vacante, candidato=self.candidato)
         self.client.force_login(self.usuario)
-        datos = {"fecha_hora": "2030-05-10T15:30", "motivo": " entrevista inicial ", "entrevistador": "Ana", "modalidad": Entrevista.Modalidad.VIDEOLLAMADA, "lugar_enlace": "https://meet.example", "observaciones": "Primera", "estado": Entrevista.Estado.PROGRAMADA}
+        datos = {"fecha_hora": "2030-05-10T15:30", "motivo": " entrevista inicial ", "entrevistador": "Ana", "modalidad": Entrevista.Modalidad.VIDEOLLAMADA, "lugar_enlace": "https://meet.example", "observaciones": "Primera", "estado": Entrevista.Estado.PROGRAMADA, "resultado": "Buen ajuste", "recomendacion": Entrevista.Recomendacion.CONTINUAR}
         respuesta = self.client.post(reverse("seleccion_nueva_entrevista", args=[postulacion.pk]), datos)
         self.assertEqual(respuesta.status_code, 302)
         entrevista = Entrevista.objects.get(postulacion=postulacion)
@@ -357,6 +357,42 @@ class SeleccionVistasTests(TestCase):
         respuesta = self.client.post(reverse("seleccion_editar_entrevista", args=[entrevista.pk]), {**datos, "estado": Entrevista.Estado.REALIZADA})
         self.assertEqual(respuesta.status_code, 302)
         self.assertEqual(Entrevista.objects.get(pk=entrevista.pk).estado, Entrevista.Estado.REALIZADA)
+        self.assertEqual(Entrevista.objects.get(pk=entrevista.pk).resultado, "Buen ajuste")
+        self.assertEqual(Entrevista.objects.get(pk=entrevista.pk).recomendacion, Entrevista.Recomendacion.CONTINUAR)
+
+    def test_realizada_requiere_resultado_y_recomendacion_no_pendiente(self):
+        postulacion = Postulacion.objects.create(vacante=self.vacante, candidato=self.candidato)
+        self.client.force_login(self.usuario)
+        datos = {"fecha_hora": "2030-05-10T15:30", "motivo": "Técnica", "entrevistador": "Ana", "modalidad": Entrevista.Modalidad.VIDEOLLAMADA, "estado": Entrevista.Estado.REALIZADA, "resultado": "   ", "recomendacion": Entrevista.Recomendacion.PENDIENTE}
+        respuesta = self.client.post(reverse("seleccion_nueva_entrevista", args=[postulacion.pk]), datos)
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(respuesta, "El resumen del resultado es obligatorio")
+        self.assertContains(respuesta, "Selecciona una recomendación distinta de Pendiente")
+        self.assertFalse(Entrevista.objects.filter(postulacion=postulacion).exists())
+
+    def test_edicion_muestra_campos_de_resultado_y_recomendacion(self):
+        postulacion = Postulacion.objects.create(vacante=self.vacante, candidato=self.candidato)
+        entrevista = Entrevista.objects.create(
+            postulacion=postulacion,
+            creado_por=self.usuario,
+            fecha_hora=datetime(2030, 5, 10, 15, tzinfo=timezone.utc),
+            entrevistador="A",
+            modalidad=Entrevista.Modalidad.PRESENCIAL,
+        )
+        self.client.force_login(self.usuario)
+        respuesta = self.client.get(reverse("seleccion_editar_entrevista", args=[entrevista.pk]))
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(respuesta, 'name="resultado"')
+        self.assertContains(respuesta, 'name="recomendacion"')
+
+    def test_resultado_legacy_se_conserva_sin_inventar(self):
+        postulacion = Postulacion.objects.create(vacante=self.vacante, candidato=self.candidato)
+        entrevista = Entrevista.objects.create(postulacion=postulacion, creado_por=self.usuario, fecha_hora=datetime(2030, 5, 10, 15, tzinfo=timezone.utc), entrevistador="A", modalidad=Entrevista.Modalidad.PRESENCIAL)
+        self.assertIsNone(entrevista.resultado)
+        self.assertIsNone(entrevista.recomendacion)
+        self.client.force_login(self.usuario)
+        respuesta = self.client.get(reverse("seleccion_detalle_vacante", args=[self.vacante.pk]))
+        self.assertNotContains(respuesta, "Resultado:")
 
     def test_motivo_obligatorio_y_no_acepta_espacios(self):
         postulacion = Postulacion.objects.create(vacante=self.vacante, candidato=self.candidato)
