@@ -24,7 +24,7 @@ class SeleccionVistasTests(TestCase):
         Membresia.objects.create(usuario=cls.ajeno, organizacion=cls.org_b, rol=Membresia.Rol.SUPERVISOR)
         permisos = Permission.objects.filter(
             content_type__app_label="talento",
-            codename__in=("view_vacante", "add_vacante", "view_postulacion", "add_postulacion", "change_postulacion", "view_candidato", "add_candidato", "add_documentocandidato", "view_documentocandidato"),
+            codename__in=("view_vacante", "add_vacante", "change_vacante", "view_postulacion", "add_postulacion", "change_postulacion", "view_candidato", "add_candidato", "add_documentocandidato", "view_documentocandidato"),
         )
         cls.usuario.user_permissions.add(*permisos)
         cls.ajeno.user_permissions.add(*permisos)
@@ -239,3 +239,40 @@ class SeleccionVistasTests(TestCase):
         self.usuario.user_permissions.add(Permission.objects.get(content_type__app_label="talento", codename="add_candidato"))
         cliente.force_login(self.usuario)
         self.assertEqual(cliente.post(reverse("seleccion_nuevo_candidato", args=[self.vacante.pk]), {"nombre": "Sin token"}).status_code, 403)
+
+    def test_edita_vacante_y_conserva_postulaciones(self):
+        postulacion = Postulacion.objects.create(vacante=self.vacante, candidato=self.candidato)
+        self.client.force_login(self.usuario)
+        respuesta = self.client.post(reverse("seleccion_editar_vacante", args=[self.vacante.pk]), {
+            "titulo": "Título actualizado", "descripcion": "Nueva descripción", "requisitos": "Requisitos nuevos",
+            "region": "Valparaíso", "ciudad": "Viña del Mar", "estado": Vacante.Estado.CERRADA, "activa": "",
+        })
+        self.assertEqual(respuesta.status_code, 302)
+        self.vacante.refresh_from_db()
+        self.assertEqual(self.vacante.titulo, "Título actualizado")
+        self.assertEqual(self.vacante.organizacion_id, self.org_a.pk)
+        self.assertFalse(self.vacante.activa)
+        self.assertTrue(Postulacion.objects.filter(pk=postulacion.pk).exists())
+        self.assertEqual(Postulacion.objects.get(pk=postulacion.pk).estado, Postulacion.Estado.RECIBIDA)
+
+    def test_edicion_vacante_conserva_valores_y_rechaza_estado_invalido(self):
+        self.client.force_login(self.usuario)
+        respuesta = self.client.post(reverse("seleccion_editar_vacante", args=[self.vacante.pk]), {
+            "titulo": "Título enviado", "descripcion": "Descripción enviada", "requisitos": "Req",
+            "region": "RM", "ciudad": "Santiago", "estado": "no_existe", "activa": "on",
+        })
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(respuesta, "Título enviado")
+        self.vacante.refresh_from_db()
+        self.assertEqual(self.vacante.titulo, "Ingeniero de pruebas")
+
+    def test_edicion_vacante_requiere_change_aislamiento_y_csrf(self):
+        self.usuario.user_permissions.remove(Permission.objects.get(content_type__app_label="talento", codename="change_vacante"))
+        self.client.force_login(self.usuario)
+        self.assertEqual(self.client.get(reverse("seleccion_editar_vacante", args=[self.vacante.pk])).status_code, 403)
+        self.client.force_login(self.ajeno)
+        self.assertEqual(self.client.get(reverse("seleccion_editar_vacante", args=[self.vacante.pk])).status_code, 404)
+        self.usuario.user_permissions.add(Permission.objects.get(content_type__app_label="talento", codename="change_vacante"))
+        cliente = self.client_class(enforce_csrf_checks=True)
+        cliente.force_login(self.usuario)
+        self.assertEqual(cliente.post(reverse("seleccion_editar_vacante", args=[self.vacante.pk]), {"titulo": "Sin CSRF"}).status_code, 403)

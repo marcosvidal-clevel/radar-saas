@@ -14,7 +14,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_http_methods
 
 from core.models import Membresia, Organizacion
-from .forms import ActualizarPostulacionForm, CandidatoForm, CandidatoVacanteForm, PostulacionForm, VacanteForm
+from .forms import ActualizarPostulacionForm, CandidatoForm, CandidatoVacanteForm, PostulacionForm, VacanteEdicionForm, VacanteForm
 from .models import Candidato, DocumentoCandidato, Postulacion, Vacante
 
 
@@ -478,6 +478,34 @@ def nueva_vacante(request):
 
 @login_required(login_url="admin:login")
 @require_http_methods(["GET", "POST"])
+def editar_vacante(request, pk):
+    administrador = _administrador_seleccion(Vacante)
+    if not request.user.is_staff or not request.user.has_perm("talento.view_vacante"):
+        raise PermissionDenied("No tienes acceso a esta vacante.")
+    vacante = get_object_or_404(_vacantes_autorizadas(request), pk=pk)
+    if not administrador.has_view_permission(request, vacante):
+        raise PermissionDenied("No tienes acceso a esta vacante.")
+    if not request.user.has_perm("talento.change_vacante") or not administrador.has_change_permission(request, vacante):
+        raise PermissionDenied("No tienes permiso para editar esta vacante.")
+    formulario = VacanteEdicionForm(request.POST or None, instance=vacante)
+    if request.method == "POST" and formulario.is_valid():
+        try:
+            with transaction.atomic():
+                vacante = formulario.save()
+        except ValidationError as error:
+            for campo, errores in error.message_dict.items():
+                for mensaje in errores:
+                    formulario.add_error(campo if campo != "__all__" else None, mensaje)
+        else:
+            messages.success(request, "Vacante actualizada correctamente.")
+            return redirect("seleccion_detalle_vacante", pk=vacante.pk)
+    return render(request, "talento/nueva_vacante.html", {
+        "formulario": formulario, "vacante": vacante, "edicion": True,
+    })
+
+
+@login_required(login_url="admin:login")
+@require_http_methods(["GET", "POST"])
 def nuevo_candidato_vacante(request, pk):
     vacante = get_object_or_404(_vacantes_autorizadas(request), pk=pk)
     administrador_candidatos = _administrador_candidatos()
@@ -560,10 +588,17 @@ def nuevo_candidato_vacante(request, pk):
 @require_http_methods(["GET", "POST"])
 def detalle_vacante(request, pk):
     vacante = get_object_or_404(_vacantes_autorizadas(request), pk=pk)
+    administrador_vacantes = _administrador_seleccion(Vacante)
     administrador_postulaciones = _administrador_seleccion(Postulacion)
     postulaciones = Postulacion.objects.none()
     puede_postular = False
     formulario = None
+    puede_editar_vacante = (
+        request.user.has_perm("talento.view_vacante")
+        and request.user.has_perm("talento.change_vacante")
+        and administrador_vacantes.has_view_permission(request, vacante)
+        and administrador_vacantes.has_change_permission(request, vacante)
+    )
     formularios_actualizacion = {}
     puede_consultar_postulaciones = (
         request.user.has_perm("talento.view_postulacion")
@@ -641,4 +676,5 @@ def detalle_vacante(request, pk):
         "formulario": formulario,
         "formularios_actualizacion": formularios_actualizacion,
         "puede_postular": puede_postular,
+        "puede_editar_vacante": puede_editar_vacante,
     })

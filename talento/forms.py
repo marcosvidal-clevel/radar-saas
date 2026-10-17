@@ -137,6 +137,42 @@ class VacanteForm(forms.ModelForm):
         return datos
 
 
+class VacanteEdicionForm(forms.ModelForm):
+    class Meta:
+        model = Vacante
+        fields = (
+            "empresa", "oportunidad", "titulo", "descripcion", "requisitos",
+            "region", "ciudad", "estado", "activa",
+        )
+        widgets = {
+            "descripcion": forms.Textarea(attrs={"rows": 4}),
+            "requisitos": forms.Textarea(attrs={"rows": 4}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        organizacion_id = self.instance.organizacion_id
+        self.fields["empresa"].queryset = EmpresaProspectada.objects.filter(
+            organizacion_id=organizacion_id, activa=True,
+        )
+        self.fields["oportunidad"].queryset = Oportunidad.objects.filter(
+            organizacion_id=organizacion_id,
+        )
+
+    def clean(self):
+        datos = super().clean()
+        organizacion_id = self.instance.organizacion_id
+        empresa = datos.get("empresa")
+        oportunidad = datos.get("oportunidad")
+        if empresa and empresa.organizacion_id != organizacion_id:
+            self.add_error("empresa", "Debe pertenecer a la organización de la vacante.")
+        if oportunidad and oportunidad.organizacion_id != organizacion_id:
+            self.add_error("oportunidad", "Debe pertenecer a la organización de la vacante.")
+        if empresa and oportunidad and oportunidad.empresa_id and oportunidad.empresa_id != empresa.pk:
+            self.add_error("oportunidad", "La oportunidad debe corresponder a la empresa indicada.")
+        return datos
+
+
 class PostulacionForm(forms.ModelForm):
     class Meta:
         model = Postulacion

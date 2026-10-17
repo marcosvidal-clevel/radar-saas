@@ -16,6 +16,7 @@ from talento.views import (
     nuevo_candidato,
     nuevo_candidato_vacante,
     detalle_vacante,
+    editar_vacante,
     nueva_vacante,
     vacantes,
 )
@@ -69,5 +70,6 @@ urlpatterns = [
     path("seleccion/vacantes/", vacantes, name="seleccion_vacantes"),
     path("seleccion/vacantes/nueva/", nueva_vacante, name="seleccion_nueva_vacante"),
     path("seleccion/vacantes/<int:pk>/candidatos/nuevo/", nuevo_candidato_vacante, name="seleccion_nuevo_candidato"),
+    path("seleccion/vacantes/<int:pk>/editar/", editar_vacante, name="seleccion_editar_vacante"),
     path("seleccion/vacantes/<int:pk>/", detalle_vacante, name="seleccion_detalle_vacante"),
 ]
