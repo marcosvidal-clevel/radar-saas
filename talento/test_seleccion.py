@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase, override_settings
+from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from docx import Document
 
@@ -498,3 +498,129 @@ class SeleccionVistasTests(TestCase):
         self.org_a.save(update_fields=("activa",))
         self.client.force_login(self.usuario)
         self.assertEqual(self.client.get(reverse("seleccion_inicio")).status_code, 403)
+
+    def test_flujo_integral_seleccion_por_http_conserva_relaciones(self):
+        cliente = Client(enforce_csrf_checks=True)
+        cliente.force_login(self.usuario)
+
+        respuesta = cliente.get(reverse("seleccion_nueva_vacante"))
+        csrf = cliente.cookies["csrftoken"].value
+        respuesta = cliente.post(reverse("seleccion_nueva_vacante"), {
+            "organizacion": self.org_a.pk,
+            "titulo": "Vacante flujo integral",
+            "descripcion": "Descripción sintética",
+            "requisitos": "Requisitos sintéticos",
+            "region": "RM",
+            "ciudad": "Santiago",
+            "estado": Vacante.Estado.ABIERTA,
+            "publicar_web": "",
+            "activa": "on",
+            "csrfmiddlewaretoken": csrf,
+        })
+        self.assertEqual(respuesta.status_code, 302)
+        vacante = Vacante.objects.get(titulo="Vacante flujo integral")
+
+        archivo_docx = BytesIO()
+        documento = Document()
+        documento.add_paragraph("CV sintético de integración")
+        documento.save(archivo_docx)
+        respuesta = cliente.get(reverse("seleccion_nuevo_candidato", args=[vacante.pk]))
+        csrf = cliente.cookies["csrftoken"].value
+        respuesta = cliente.post(reverse("seleccion_nuevo_candidato", args=[vacante.pk]), {
+            "nombre": "Candidato flujo integral",
+            "email": "flujo@example.com",
+            "profesion": "Analista",
+            "csrfmiddlewaretoken": csrf,
+            "cv": SimpleUploadedFile(
+                "cv-flujo.docx",
+                archivo_docx.getvalue(),
+                content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ),
+        })
+        self.assertEqual(respuesta.status_code, 302)
+        candidato = Candidato.objects.get(email="flujo@example.com")
+        postulacion = Postulacion.objects.get(vacante=vacante, candidato=candidato)
+        documento_cv = postulacion.documento_cv
+        respuesta = cliente.get(reverse("descargar_documento_candidato", args=[documento_cv.pk]))
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertIn(b"PK", b"".join(respuesta.streaming_content))
+
+        respuesta = cliente.get(reverse("seleccion_detalle_vacante", args=[vacante.pk]))
+        csrf = cliente.cookies["csrftoken"].value
+        respuesta = cliente.post(reverse("seleccion_detalle_vacante", args=[vacante.pk]), {
+            "accion": "actualizar_postulacion",
+            "postulacion": postulacion.pk,
+            "estado": Postulacion.Estado.ENTREVISTA,
+            "observaciones": "En evaluación",
+            "csrfmiddlewaretoken": csrf,
+        })
+        self.assertEqual(respuesta.status_code, 302)
+        historial = HistorialEstadoPostulacion.objects.get(postulacion=postulacion)
+        self.assertEqual(historial.usuario, self.usuario)
+        self.assertEqual(historial.estado_anterior, Postulacion.Estado.RECIBIDA)
+        self.assertEqual(historial.estado_nuevo, Postulacion.Estado.ENTREVISTA)
+
+        respuesta = cliente.get(reverse("seleccion_nueva_entrevista", args=[postulacion.pk]))
+        csrf = cliente.cookies["csrftoken"].value
+        respuesta = cliente.post(reverse("seleccion_nueva_entrevista", args=[postulacion.pk]), {
+            "fecha_hora": "2030-05-10T15:30",
+            "motivo": "Entrevista técnica",
+            "entrevistador": "Ana",
+            "modalidad": Entrevista.Modalidad.VIDEOLLAMADA,
+            "estado": Entrevista.Estado.PROGRAMADA,
+            "csrfmiddlewaretoken": csrf,
+        })
+        self.assertEqual(respuesta.status_code, 302)
+        entrevista = Entrevista.objects.get(postulacion=postulacion)
+
+        respuesta = cliente.get(reverse("seleccion_editar_entrevista", args=[entrevista.pk]))
+        csrf = cliente.cookies["csrftoken"].value
+        respuesta = cliente.post(reverse("seleccion_editar_entrevista", args=[entrevista.pk]), {
+            "fecha_hora": "2030-05-10T15:30",
+            "motivo": "Entrevista técnica",
+            "entrevistador": "Ana",
+            "modalidad": Entrevista.Modalidad.VIDEOLLAMADA,
+            "estado": Entrevista.Estado.REALIZADA,
+            "resultado": "Cumple los requisitos",
+            "recomendacion": Entrevista.Recomendacion.CONTINUAR,
+            "csrfmiddlewaretoken": csrf,
+        })
+        self.assertEqual(respuesta.status_code, 302)
+        postulacion.refresh_from_db()
+        entrevista.refresh_from_db()
+        self.assertEqual(postulacion.estado, Postulacion.Estado.ENTREVISTA)
+        self.assertEqual(entrevista.resultado, "Cumple los requisitos")
+        self.assertEqual(entrevista.recomendacion, Entrevista.Recomendacion.CONTINUAR)
+
+        respuesta = cliente.get(reverse("seleccion_detalle_vacante", args=[vacante.pk]))
+        csrf = cliente.cookies["csrftoken"].value
+        respuesta = cliente.post(reverse("seleccion_detalle_vacante", args=[vacante.pk]), {
+            "accion": "actualizar_postulacion",
+            "postulacion": postulacion.pk,
+            "estado": Postulacion.Estado.SELECCIONADA,
+            "csrfmiddlewaretoken": csrf,
+        })
+        self.assertEqual(respuesta.status_code, 302)
+
+        respuesta = cliente.get(reverse("seleccion_editar_vacante", args=[vacante.pk]))
+        csrf = cliente.cookies["csrftoken"].value
+        respuesta = cliente.post(reverse("seleccion_editar_vacante", args=[vacante.pk]), {
+            "titulo": vacante.titulo,
+            "descripcion": vacante.descripcion,
+            "requisitos": vacante.requisitos,
+            "region": vacante.region,
+            "ciudad": vacante.ciudad,
+            "estado": Vacante.Estado.CERRADA,
+            "activa": "",
+            "csrfmiddlewaretoken": csrf,
+        })
+        self.assertEqual(respuesta.status_code, 302)
+        vacante.refresh_from_db()
+        self.assertEqual(vacante.estado, Vacante.Estado.CERRADA)
+        self.assertFalse(vacante.activa)
+        self.assertTrue(Postulacion.objects.filter(pk=postulacion.pk).exists())
+        self.assertTrue(Entrevista.objects.filter(pk=entrevista.pk).exists())
+        self.assertEqual(HistorialEstadoPostulacion.objects.filter(postulacion=postulacion).count(), 2)
+        respuesta = cliente.get(reverse("seleccion_inicio"))
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertNotContains(respuesta, vacante.titulo)
