@@ -121,6 +121,58 @@ class ImportarCVsTests(TestCase):
         self.assertTrue(all(len(documento.sha256) == 64 for documento in documentos))
         self.assertEqual(documentos[1].estado_extraccion, DocumentoCandidato.EstadoExtraccion.EXTRAIDO)
 
+    def test_importa_varios_documentos_una_persona_y_deja_sin_tipo_pendiente(self):
+        manifest = self.manifest([{
+            "id_fila": "multi", "identificador_origen": "persona-1",
+            "origen_importacion": "fuente-multi", "nombre": "Persona multi",
+            "documentos": [
+                {"identificador_origen": "cv-1", "archivo": "cv.pdf", "nombre": "CV", "tipo": "curriculum"},
+                {"identificador_origen": "ant-1", "archivo": "cv.docx", "nombre": "Antecedente"},
+            ],
+        }])
+        output = self.run_command(manifest, "--importar")
+        self.assertIn("DOCUMENTOS", output)
+        self.assertEqual(Candidato.objects.count(), 1)
+        self.assertEqual(DocumentoCandidato.objects.count(), 2)
+        otro = DocumentoCandidato.objects.get(identificador_origen="ant-1")
+        self.assertEqual(otro.tipo, DocumentoCandidato.Tipo.OTRO)
+        self.assertTrue(otro.pendiente_clasificacion)
+        self.assertEqual(otro.estado_extraccion, DocumentoCandidato.EstadoExtraccion.NO_APLICA)
+
+    def test_reimportacion_parcial_omite_igual_y_agrega_documento_nuevo(self):
+        first = self.manifest([{
+            "identificador_origen": "persona-2", "origen_importacion": "fuente-parcial", "nombre": "Persona",
+            "documentos": [{"identificador_origen": "cv", "archivo": "cv.pdf", "tipo": "curriculum"}],
+        }])
+        self.run_command(first, "--importar")
+        second = self.manifest([{
+            "identificador_origen": "persona-2", "origen_importacion": "fuente-parcial", "nombre": "Nombre cambiado",
+            "documentos": [
+                {"identificador_origen": "cv", "archivo": "cv.pdf", "tipo": "curriculum"},
+                {"identificador_origen": "ant", "archivo": "cv.docx", "tipo": "otro"},
+            ],
+        }], name="partial.json")
+        output = self.run_command(second, "--importar")
+        self.assertIn("duplicado=1", output)
+        self.assertEqual(Candidato.objects.count(), 1)
+        self.assertEqual(DocumentoCandidato.objects.count(), 2)
+        self.assertEqual(Candidato.objects.get().nombre, "Persona")
+
+    def test_identificador_documental_con_hash_distinto_queda_pendiente(self):
+        self.run_command(self.manifest([self.record("same")]), "--importar")
+        (self.root / "cv.pdf").write_bytes(b"different")
+        output = self.run_command(self.manifest([self.record("same")], name="different.json"))
+        self.assertIn("pendiente_revision=1", output)
+        self.assertEqual(DocumentoCandidato.objects.count(), 1)
+
+    def test_evaluacion_se_rechaza_en_importacion_normal(self):
+        output = self.run_command(self.manifest([{
+            "identificador_origen": "persona-e", "origen_importacion": "fuente-e", "nombre": "Persona",
+            "documentos": [{"identificador_origen": "eval", "archivo": "cv.pdf", "tipo": "evaluacion"}],
+        }]))
+        self.assertIn("evaluacion_restringida", output)
+        self.assertEqual(Candidato.objects.count(), 0)
+
     def test_reejecucion_y_duplicados_dentro_de_organizacion(self):
         manifest = self.manifest([
             self.record("one"),
@@ -128,7 +180,8 @@ class ImportarCVsTests(TestCase):
         ])
         self.run_command(manifest, "--importar")
         output = self.run_command(manifest)
-        self.assertIn("duplicado=2", output)
+        self.assertIn("duplicado=1", output)
+        self.assertIn("conflicto_hash=1", output)
         self.assertEqual(Candidato.objects.count(), 1)
 
     def test_mismo_sha256_en_otra_organizacion_no_se_bloquea(self):

@@ -93,6 +93,13 @@ class SeguridadDocumentosTests(TestCase):
             tipo=DocumentoCandidato.Tipo.EVALUACION,
             archivo=SimpleUploadedFile("evaluacion.pdf", b"%PDF-1.4\nDocumento de prueba"),
         )
+        cls.pendiente = DocumentoCandidato.objects.create(
+            candidato=cls.candidato_a,
+            nombre="Documento pendiente",
+            tipo=DocumentoCandidato.Tipo.OTRO,
+            pendiente_clasificacion=True,
+            archivo=SimpleUploadedFile("pendiente.pdf", b"contenido pendiente"),
+        )
 
     def setUp(self):
         self.factory = RequestFactory()
@@ -120,6 +127,16 @@ class SeguridadDocumentosTests(TestCase):
         )
         self.assertIn(self.documento_a, documentos)
         self.assertNotIn(self.documento_b, documentos)
+
+    def test_documento_pendiente_solo_es_visible_para_clasificador(self):
+        self.assertNotIn(
+            self.pendiente,
+            self.administracion.get_queryset(self.solicitud(self.colaborador)),
+        )
+        self.assertIn(
+            self.pendiente,
+            self.administracion.get_queryset(self.solicitud(self.administrador)),
+        )
 
     def test_evaluaciones_ocultas_para_administrador(self):
         documentos = self.administracion.get_queryset(

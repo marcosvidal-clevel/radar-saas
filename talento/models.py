@@ -230,6 +230,11 @@ class DocumentoCandidato(models.Model):
         db_index=True,
     )
 
+    origen_importacion = models.CharField(max_length=100, blank=True)
+    identificador_origen = models.CharField(max_length=200, blank=True)
+
+    pendiente_clasificacion = models.BooleanField(default=False, db_index=True)
+
     creado_en = models.DateTimeField(auto_now_add=True)
     actualizado_en = models.DateTimeField(auto_now=True)
 
@@ -237,6 +242,13 @@ class DocumentoCandidato(models.Model):
         verbose_name = "Documento del candidato"
         verbose_name_plural = "Documentos de candidatos"
         ordering = ["-creado_en"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("candidato", "origen_importacion", "identificador_origen"),
+                condition=models.Q(origen_importacion__gt="", identificador_origen__gt=""),
+                name="documento_origen_unico_por_candidato",
+            ),
+        ]
 
     def clean(self):
         super().clean()

@@ -52,7 +52,20 @@ def _documentos_consultables(request, candidato):
     if not membresia:
         return DocumentoCandidato.objects.none()
 
-    return documentos.exclude(tipo=DocumentoCandidato.Tipo.EVALUACION)
+    documentos = documentos.exclude(tipo=DocumentoCandidato.Tipo.EVALUACION)
+    puede_clasificar = (
+        request.user.has_perm("talento.change_documentocandidato")
+        and Membresia.objects.filter(
+            usuario=request.user,
+            organizacion_id=candidato.organizacion_id,
+            organizacion__activa=True,
+            activa=True,
+            rol__in=(Membresia.Rol.ADMINISTRADOR, Membresia.Rol.SUPERVISOR),
+        ).exists()
+    )
+    if not puede_clasificar:
+        documentos = documentos.filter(pendiente_clasificacion=False)
+    return documentos
 
 
 def _organizaciones_gestion(request, administrador):
@@ -417,6 +430,20 @@ def descargar_documento_candidato(request, pk):
             raise PermissionDenied(
                 "Este documento tiene acceso restringido."
             )
+
+        puede_clasificar = (
+            documento.pendiente_clasificacion
+            and request.user.has_perm("talento.change_documentocandidato")
+            and Membresia.objects.filter(
+                usuario=request.user,
+                organizacion_id=documento.candidato.organizacion_id,
+                organizacion__activa=True,
+                activa=True,
+                rol__in=(Membresia.Rol.ADMINISTRADOR, Membresia.Rol.SUPERVISOR),
+            ).exists()
+        )
+        if documento.pendiente_clasificacion and not puede_clasificar:
+            raise PermissionDenied("Este documento requiere clasificación autorizada.")
 
     if not documento.archivo:
         raise Http404("El documento no tiene archivo asociado.")

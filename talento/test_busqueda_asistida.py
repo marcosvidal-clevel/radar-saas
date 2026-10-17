@@ -41,6 +41,11 @@ class BusquedaAsistidaTests(TestCase):
         DocumentoCandidato.objects.filter(pk=cls.cv.pk).update(
             texto_extraido="Prevencionista con experiencia en transporte"
         )
+        cls.pendiente = DocumentoCandidato.objects.create(
+            candidato=cls.candidato, tipo=DocumentoCandidato.Tipo.OTRO,
+            pendiente_clasificacion=True, nombre="pendiente.pdf",
+            archivo=SimpleUploadedFile("pendiente.pdf", b"contenido confidencial Prevencionista"),
+        )
         cls.cv_ajeno = DocumentoCandidato.objects.create(
             candidato=cls.ajeno, tipo=DocumentoCandidato.Tipo.CURRICULUM,
             nombre="cv-ajeno.pdf", archivo=SimpleUploadedFile("cv-ajeno.pdf", b"x"),
@@ -106,6 +111,13 @@ class BusquedaAsistidaTests(TestCase):
         resultado = interpretar_consulta("transporte prevencionista Santiago")
         self.assertEqual(resultado["obligatorios"], ["transporte", "prevencionista"])
         self.assertEqual(resultado["ubicaciones"], ["Santiago"])
+
+    def test_busqueda_no_indexa_documentos_pendientes_de_clasificacion(self):
+        self.client.force_login(self.user)
+        respuesta = self.client.get(
+            reverse("talento_candidatos"), {"q": "confidencial"}
+        )
+        self.assertNotContains(respuesta, self.candidato.nombre)
 
     def test_conectores_no_quedan_como_pendientes_y_nombres_se_conservan(self):
         resultado = interpretar_consulta("busco a jose venegas")

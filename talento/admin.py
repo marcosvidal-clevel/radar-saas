@@ -272,10 +272,16 @@ class DocumentoCandidatoAdmin(
 
         if request.user.is_superuser:
             return queryset
-
-        return queryset.exclude(
+        queryset = queryset.exclude(
             tipo=DocumentoCandidato.Tipo.EVALUACION
         )
+        puede_clasificar = (
+            request.user.has_perm("talento.change_documentocandidato")
+            and self.organizaciones_permitidas(request, self.ROLES_GESTION).exists()
+        )
+        if not puede_clasificar:
+            queryset = queryset.filter(pendiente_clasificacion=False)
+        return queryset
 
     def formfield_for_foreignkey(
         self,
@@ -326,6 +332,9 @@ class DocumentoCandidatoAdmin(
                     "No tienes permiso para gestionar "
                     "evaluaciones psicolaborales."
                 )
+
+            if obj.tipo != DocumentoCandidato.Tipo.OTRO:
+                obj.pendiente_clasificacion = False
 
             rol = self.rol_en_organizacion(
                 request,

@@ -106,6 +106,10 @@ class SeguridadDescargasTests(TransactionTestCase):
             codename="view_documentocandidato",
         )
         grupo.permissions.add(permiso)
+        self.administrador.user_permissions.add(Permission.objects.get(
+            content_type__app_label="talento",
+            codename="change_documentocandidato",
+        ))
 
         for usuario in (
             self.administrador,
@@ -140,6 +144,16 @@ class SeguridadDescargasTests(TransactionTestCase):
                 content_type="application/pdf",
             ),
         )
+        self.pendiente = DocumentoCandidato.objects.create(
+            candidato=self.candidato,
+            nombre="Documento sin clasificar",
+            tipo=DocumentoCandidato.Tipo.OTRO,
+            pendiente_clasificacion=True,
+            archivo=SimpleUploadedFile(
+                "pendiente.pdf", b"contenido no clasificado",
+                content_type="application/pdf",
+            ),
+        )
 
     def url(self, documento):
         return reverse(
@@ -167,6 +181,22 @@ class SeguridadDescargasTests(TransactionTestCase):
 
         self.assertEqual(respuesta.status_code, 200)
         respuesta.close()
+
+    def test_colaborador_no_descarga_documento_pendiente(self):
+        self.client.force_login(self.colaborador)
+        self.assertEqual(self.client.get(self.url(self.pendiente)).status_code, 403)
+
+    def test_administrador_puede_descargar_documento_pendiente_para_clasificar(self):
+        self.client.force_login(self.administrador)
+        respuesta = self.client.get(self.url(self.pendiente))
+        self.assertEqual(respuesta.status_code, 200)
+        respuesta.close()
+
+    def test_documento_pendiente_no_elude_restriccion_de_evaluacion(self):
+        self.pendiente.tipo = DocumentoCandidato.Tipo.EVALUACION
+        self.pendiente.save(update_fields=("tipo",))
+        self.client.force_login(self.administrador)
+        self.assertEqual(self.client.get(self.url(self.pendiente)).status_code, 403)
 
     def test_organizacion_desactivada_no_permite_descarga(self):
         self.organizacion_a.activa = False

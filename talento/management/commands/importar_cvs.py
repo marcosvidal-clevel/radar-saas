@@ -117,8 +117,30 @@ class Command(BaseCommand):
         if not user.has_perm("talento.add_documentocandidato"):
             raise CommandError("El usuario no tiene permiso de crear documentos.")
 
+    def _canonical(self, candidate):
+        seen = set()
+        while candidate.consolidado_en_id:
+            if candidate.pk in seen:
+                raise CommandError("Cadena de consolidación inválida.")
+            seen.add(candidate.pk)
+            candidate = Candidato.objects.get(pk=candidate.consolidado_en_id)
+        return candidate
+
+    def _documents(self, row, position):
+        if "documentos" not in row:
+            return [{
+                "identificador_origen": str(row.get("identificador_origen", position)),
+                "archivo": row.get("archivo"),
+                "nombre": row.get("nombre_documento", ""),
+                "tipo": DocumentoCandidato.Tipo.CURRICULUM,
+            }]
+        documents = row.get("documentos")
+        if not isinstance(documents, list) or not documents:
+            return None
+        return documents
+
     def _inspect(self, root, organization, records):
-        seen_hashes = set()
+        seen_hashes = {}
         self.uncheckable_duplicates = DocumentoCandidato.objects.filter(
             candidato__organizacion=organization,
             tipo=DocumentoCandidato.Tipo.CURRICULUM,
@@ -133,70 +155,103 @@ class Command(BaseCommand):
                 item["error"] = "registro_no_objeto"
                 report.append(item)
                 continue
-            required = ("identificador_origen", "origen_importacion", "nombre", "archivo")
+            required = ("identificador_origen", "origen_importacion", "nombre")
             missing = [field for field in required if not str(row.get(field, "")).strip()]
             if missing:
                 item["status"] = "incompleto"
                 item["error"] = "datos_requeridos_ausentes"
                 report.append(item)
                 continue
-            path, error = _safe_path(root, row["archivo"])
-            if error or path is None:
-                item["status"], item["error"] = "invalido", error
+            documents = self._documents(row, position)
+            if documents is None:
+                item["status"], item["error"] = "incompleto", "documentos_invalidos"
                 report.append(item)
                 continue
-            if path.suffix.lower() not in ALLOWED_SUFFIXES:
-                item["status"], item["error"] = "formato_no_admitido", "extension"
+            plans = []
+            for document_row in documents:
+                if not isinstance(document_row, dict) or not str(document_row.get("archivo", "")).strip() or not str(document_row.get("identificador_origen", "")).strip():
+                    plans.append({"status": "incompleto", "error": "documento_requerido_ausente"})
+                    continue
+                path, error = _safe_path(root, document_row["archivo"])
+                if error or path is None:
+                    plans.append({"status": "invalido", "error": error})
+                    continue
+                if path.suffix.lower() not in ALLOWED_SUFFIXES:
+                    plans.append({"status": "formato_no_admitido", "error": "extension"})
+                    continue
+                try:
+                    size = path.stat().st_size
+                except (FileNotFoundError, OSError):
+                    plans.append({"status": "faltante", "error": "archivo_ausente"})
+                    continue
+                if not path.is_file():
+                    plans.append({"status": "faltante", "error": "archivo_no_regular"})
+                    continue
+                if size > MAX_BYTES:
+                    plans.append({"status": "tamano_excesivo", "error": "limite_10_mb"})
+                    continue
+                tipo = document_row.get("tipo") or DocumentoCandidato.Tipo.OTRO
+                if tipo == DocumentoCandidato.Tipo.EVALUACION:
+                    plans.append({"status": "rechazado", "error": "evaluacion_restringida"})
+                    continue
+                if tipo not in DocumentoCandidato.Tipo.values:
+                    plans.append({"status": "invalido", "error": "tipo_no_admitido"})
+                    continue
+                digest = _digest(path)
+                plans.append({"status": "valido", "path": path, "sha256": digest, "row": document_row,
+                              "clasificacion_pendiente": "tipo" not in document_row or not document_row.get("tipo")})
+            if any(plan["status"] != "valido" for plan in plans):
+                item["status"] = "incompleto" if any(plan["status"] == "incompleto" for plan in plans) else "invalido"
+                item["error"] = ",".join(sorted({plan["error"] for plan in plans if plan["status"] != "valido"}))
                 report.append(item)
                 continue
-            try:
-                size = path.stat().st_size
-            except (FileNotFoundError, OSError):
-                item["status"], item["error"] = "faltante", "archivo_ausente"
-                report.append(item)
-                continue
-            if not path.is_file():
-                item["status"], item["error"] = "faltante", "archivo_no_regular"
-                report.append(item)
-                continue
-            if size > MAX_BYTES:
-                item["status"], item["error"] = "tamano_excesivo", "limite_10_mb"
-                report.append(item)
-                continue
-            digest = _digest(path)
-            item["sha256"] = digest
-            procedencia = CandidatoProcedencia.objects.filter(
-                organizacion=organization,
-                origen_importacion=row["origen_importacion"],
-                identificador_origen=row["identificador_origen"],
-            ).first()
             existing = Candidato.objects.filter(
                 organizacion=organization,
                 origen_importacion=row["origen_importacion"],
                 identificador_origen=row["identificador_origen"],
             ).first()
-            if procedencia or existing:
-                previous_hash = procedencia.sha256 if procedencia else ""
-                if not previous_hash and existing:
-                    previous_hash = DocumentoCandidato.objects.filter(
-                        candidato=existing, sha256__gt=""
-                    ).values_list("sha256", flat=True).first() or ""
-                if previous_hash == digest:
-                    item["status"], item["error"] = "duplicado", "origen_ya_importado"
+            candidate = self._canonical(existing) if existing else None
+            statuses = []
+            for plan in plans:
+                drow, digest = plan["row"], plan["sha256"]
+                current = DocumentoCandidato.objects.filter(
+                    candidato=candidate, origen_importacion=row["origen_importacion"],
+                    identificador_origen=drow["identificador_origen"],
+                ).first() if candidate else None
+                legacy_origin = CandidatoProcedencia.objects.filter(
+                    candidato=candidate,
+                    organizacion=organization,
+                    origen_importacion=row["origen_importacion"],
+                    identificador_origen=row["identificador_origen"],
+                ).first() if candidate and drow["identificador_origen"] == row["identificador_origen"] else None
+                if current and current.sha256 == digest:
+                    statuses.append("duplicado")
+                elif current:
+                    statuses.append("pendiente_revision")
                 else:
-                    item["status"], item["error"] = "pendiente_revision", "origen_archivo_diferente"
-            elif digest in seen_hashes or DocumentoCandidato.objects.filter(
-                candidato__organizacion=organization, sha256=digest
-            ).exists():
-                item["status"], item["error"] = "duplicado", "sha256_en_organizacion"
-            elif Candidato.objects.filter(
-                organizacion=organization,
-                origen_importacion=row["origen_importacion"],
-                identificador_origen=row["identificador_origen"],
-            ).exists():
-                item["status"], item["error"] = "ya_importado", "identificador_origen"
-            else:
-                seen_hashes.add(digest)
+                    same_candidate_hash = False
+                    has_any_hash = False
+                    for owner_id in DocumentoCandidato.objects.filter(
+                        candidato__organizacion=organization, sha256=digest
+                    ).values_list("candidato_id", flat=True):
+                        has_any_hash = True
+                        owner = Candidato.objects.only("pk", "consolidado_en_id").get(pk=owner_id)
+                        if candidate and self._canonical(owner).pk == candidate.pk:
+                            same_candidate_hash = True
+                            break
+                    if same_candidate_hash:
+                        statuses.append("duplicado")
+                    elif legacy_origin and legacy_origin.sha256 and legacy_origin.sha256 != digest:
+                        statuses.append("pendiente_revision")
+                    elif has_any_hash or digest in seen_hashes:
+                        statuses.append("conflicto_hash")
+                    else:
+                        statuses.append("documento_nuevo" if not plan["clasificacion_pendiente"] else "pendiente_clasificacion")
+                        seen_hashes[digest] = candidate.pk if candidate else None
+            item["candidate"] = "existente" if candidate else "nuevo"
+            item["document_plans"] = plans
+            item["status"] = "valido" if any(s in {"documento_nuevo", "pendiente_clasificacion"} for s in statuses) and not any(s in {"pendiente_revision", "conflicto_hash"} for s in statuses) else ("pendiente_revision" if "pendiente_revision" in statuses else ("conflicto_hash" if "conflicto_hash" in statuses else "duplicado"))
+            item["document_statuses"] = statuses
             report.append(item)
         return report
 
@@ -210,37 +265,47 @@ class Command(BaseCommand):
         })
         return values
 
-    def _import_one(self, root, organization, row, item):
-        path, error = _safe_path(root, row["archivo"])
-        if error or path is None:
-            raise ValueError(error or "ruta_invalida")
-        saved_name = None
+    def _import_one(self, organization, row, item):
+        saved_names = []
         try:
             with transaction.atomic():
-                candidate = Candidato.objects.create(
-                    **self._candidate_fields(row, organization)
-                )
-                document = DocumentoCandidato(
-                    candidato=candidate,
-                    tipo=DocumentoCandidato.Tipo.CURRICULUM,
-                    nombre=row.get("nombre_documento", path.name),
-                    es_cv_principal=True,
-                    vigente=True,
-                    sha256=item["sha256"],
-                )
-                with path.open("rb") as source:
-                    document.archivo.save(path.name, File(source), save=False)
-                saved_name = document.archivo.name
-                document.save()
-                CandidatoProcedencia.objects.create(
-                    candidato=candidate,
+                candidate = Candidato.objects.filter(
                     organizacion=organization,
                     origen_importacion=row["origen_importacion"],
                     identificador_origen=row["identificador_origen"],
-                    sha256=item["sha256"],
+                ).first()
+                if candidate:
+                    candidate = self._canonical(candidate)
+                else:
+                    candidate = Candidato.objects.create(**self._candidate_fields(row, organization))
+                CandidatoProcedencia.objects.get_or_create(
+                    organizacion=organization,
+                    origen_importacion=row["origen_importacion"],
+                    identificador_origen=row["identificador_origen"],
+                    defaults={"candidato": candidate},
                 )
+                for plan, status in zip(item["document_plans"], item["document_statuses"]):
+                    if status not in {"documento_nuevo", "pendiente_clasificacion"}:
+                        continue
+                    drow = plan["row"]
+                    tipo = drow.get("tipo") or DocumentoCandidato.Tipo.OTRO
+                    document = DocumentoCandidato(
+                        candidato=candidate,
+                        tipo=tipo,
+                        nombre=drow.get("nombre") or plan["path"].name,
+                        es_cv_principal=(tipo == DocumentoCandidato.Tipo.CURRICULUM and not candidate.documentos.filter(es_cv_principal=True, vigente=True).exists()),
+                        vigente=True,
+                        sha256=plan["sha256"],
+                        origen_importacion=row["origen_importacion"],
+                        identificador_origen=drow["identificador_origen"],
+                        pendiente_clasificacion=plan["clasificacion_pendiente"],
+                    )
+                    with plan["path"].open("rb") as source:
+                        document.archivo.save(plan["path"].name, File(source), save=False)
+                    saved_names.append(document.archivo.name)
+                    document.save()
         except Exception:
-            if saved_name:
+            for saved_name in saved_names:
                 default_storage.delete(saved_name)
             raise
 
@@ -253,29 +318,34 @@ class Command(BaseCommand):
         self._authorize(organization, user)
         report = self._inspect(root, organization, data["registros"])
         counts = {}
+        document_counts = {}
         for item in report:
             counts[item["status"]] = counts.get(item["status"], 0) + 1
+            for status in item.get("document_statuses", []):
+                document_counts[status] = document_counts.get(status, 0) + 1
         mode = "IMPORTACION" if options["importar"] else "PREVISUALIZACION"
         self.stdout.write(mode)
         self.stdout.write("RESUMEN " + " ".join(f"{key}={counts[key]}" for key in sorted(counts)))
+        if document_counts:
+            self.stdout.write("DOCUMENTOS " + " ".join(f"{key}={document_counts[key]}" for key in sorted(document_counts)))
         if self.uncheckable_duplicates:
             self.stdout.write(
                 "ADVERTENCIA duplicacion_no_comprobable="
                 f"{self.uncheckable_duplicates} documentos_sin_sha256"
             )
         for item in report:
-            if item["status"] != "valido":
-                self.stdout.write(f"FILA {item['row']} ESTADO {item['status']} ERROR {item.get('error', 'ninguno')}")
+            if item.get("document_statuses") or item["status"] != "valido":
+                self.stdout.write(f"FILA {item['row']} CANDIDATO {item.get('candidate', 'n/a')} ESTADO {item['status']} DOCUMENTOS={','.join(item.get('document_statuses', []))} ERROR {item.get('error', 'ninguno')}")
         if not options["importar"]:
             self.stdout.write("SIN_CAMBIOS opcion_explicita_requerida=--importar")
             return
         imported = 0
         errors = 0
         for row, item in zip(data["registros"], report):
-            if item["status"] != "valido":
+            if not any(status in {"documento_nuevo", "pendiente_clasificacion"} for status in item.get("document_statuses", [])):
                 continue
             try:
-                self._import_one(root, organization, row, item)
+                self._import_one(organization, row, item)
                 imported += 1
             except Exception:
                 errors += 1
