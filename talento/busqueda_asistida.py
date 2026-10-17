@@ -15,6 +15,7 @@ SINONIMOS_PROFESIONALES = {
 MARCADORES_DESEABLES = {"idealmente", "preferentemente", "ojalá", "ojala", "deseable"}
 MARCADORES_NEGACION = {"sin", "no", "excepto", "excluir", "excluyendo"}
 MARCADORES_FORMACION = {"formación", "formacion", "estudios", "titulado", "titulada", "título", "titulo", "grado", "egresado", "egresada"}
+MARCADORES_CAPACITACION = {"capacitación", "capacitacion", "curso", "cursos", "formación", "formacion"}
 MARCADORES_PERSONA = {"persona", "candidato", "candidata", "nombre", "apellido"}
 MARCADORES_PROFESION = {"profesión", "profesion", "profesional"}
 MARCADORES_UBICACION = {"ubicación", "ubicacion", "lugar", "ciudad", "región", "region"}
@@ -35,7 +36,7 @@ PALABRAS_CONVERSACIONALES = {
     "la", "en", "de", "y", "quien", "persona", "perfil", "candidata",
     "candidato", "como", "del", "al", "a", "por", "tiene", "tienen", "es",
     "qué", "que", "quién", "quien", "existe", "existen", "alguien", "haya",
-    "hayan", "trabajado", "trabajada", "trabajadas", "trabajados", "trabajó",
+    "hayan", "alguno", "alguna", "algunos", "algunas", "trabajado", "trabajada", "trabajadas", "trabajados", "trabajó",
     "trabajo", "trabajaron",
     "cv", "curriculum", "currículum", "ha", "han", "hay", "estudiado", "estudiada", "estudió", "estudio", "menciona", "mencionado", "proyectos",
     "en", "el", "la", "los", "las", "del",
@@ -53,6 +54,7 @@ def interpretar_consulta(consulta):
     pendientes = []
     modo_deseable = False
     modo_tipo = None
+    modo_capacitacion = False
     tokens = _TOKEN.findall(consulta)
     palabras = [(frase or palabra).strip(" ,.;:!?¿¡") for frase, palabra in tokens]
     palabras = _agrupar_instituciones(palabras)
@@ -83,8 +85,22 @@ def interpretar_consulta(consulta):
             modo_deseable = True
             i += 1
             continue
-        if normalizado in MARCADORES_FORMACION:
+        if normalizado in {"capacitación", "capacitacion", "curso", "cursos"}:
             modo_tipo = "formación"
+            modo_capacitacion = True
+            i += 1
+            continue
+        if normalizado in {"formación", "formacion"}:
+            modo_tipo = "formación"
+            siguiente_formacion = next(
+                (palabras[j].casefold() for j in range(i + 1, len(palabras))
+                 if palabras[j].casefold() not in {"en", "de"}),
+                "",
+            )
+            modo_capacitacion = siguiente_formacion not in {
+                "ingeniería", "ingenieria", "universidad", "instituto",
+                "colegio", "__institucion__:",
+            }
             i += 1
             continue
         if normalizado.startswith("__institucion__:"):
@@ -94,7 +110,7 @@ def interpretar_consulta(consulta):
                 "tipo": "deseable" if modo_deseable else "formación",
                 "categoria": "formación",
                 "texto": item[1],
-                "evidencia": "coincidencia textual",
+                "evidencia": "capacitación por comprobar" if modo_capacitacion else "coincidencia textual",
             })
             modo_deseable = False
             modo_tipo = None
@@ -160,11 +176,14 @@ def interpretar_consulta(consulta):
                 if item[0] == "ubicación estructurada"
                 else "requiere comprobación"
                 if item[0] == "experiencia"
+                else "capacitación por comprobar"
+                if item[0] == "formación" and modo_capacitacion
                 else "coincidencia textual"
             ),
         })
         modo_deseable = False
         modo_tipo = None
+        modo_capacitacion = False
         i += 1
     return {
         "obligatorios": obligatorios,
@@ -185,6 +204,20 @@ def interpretar_consulta(consulta):
             and criterio["texto"] not in no_interpretado
         ],
     }
+
+
+def evidencia_capacitacion(texto, termino):
+    """Distingue evidencia explícita de formación de una mera mención textual."""
+    texto = (texto or "").casefold()
+    termino = re.escape(termino.casefold())
+    patron = re.compile(
+        rf"(?:curso|capacitación|capacitacion|formación|formacion|certificad[oa])"
+        rf"[^.\n]{{0,100}}{termino}|{termino}[^.\n]{{0,100}}"
+        rf"(?:curso|capacitación|capacitacion|formación|formacion|certificad[oa])"
+    )
+    if patron.search(texto):
+        return "capacitación explícita"
+    return "capacitación por comprobar"
 
 
 def _agrupar_instituciones(palabras):

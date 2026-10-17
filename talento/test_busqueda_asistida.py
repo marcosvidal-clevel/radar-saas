@@ -8,7 +8,7 @@ from django.urls import reverse
 
 from core.models import Membresia, Organizacion
 
-from .busqueda_asistida import interpretar_consulta
+from .busqueda_asistida import evidencia_capacitacion, interpretar_consulta
 from .models import Candidato, DocumentoCandidato
 
 
@@ -83,6 +83,26 @@ class BusquedaAsistidaTests(TestCase):
         DocumentoCandidato.objects.filter(pk=cls.cv_enami.pk).update(
             texto_extraido="Experiencia profesional mencionada en proyectos para ENAMI"
         )
+        cls.autocad_curso = Candidato.objects.create(
+            organizacion=cls.org, nombre="Autocad curso sintético", profesion="Dibujante",
+        )
+        cls.cv_autocad_curso = DocumentoCandidato.objects.create(
+            candidato=cls.autocad_curso, tipo=DocumentoCandidato.Tipo.CURRICULUM,
+            nombre="cv-autocad-curso.pdf", archivo=SimpleUploadedFile("cv-autocad-curso.pdf", b"x"),
+        )
+        DocumentoCandidato.objects.filter(pk=cls.cv_autocad_curso.pk).update(
+            texto_extraido="Curso de AutoCAD aprobado en 2024"
+        )
+        cls.autocad_mencion = Candidato.objects.create(
+            organizacion=cls.org, nombre="Autocad mención sintética", profesion="Arquitecta",
+        )
+        cls.cv_autocad_mencion = DocumentoCandidato.objects.create(
+            candidato=cls.autocad_mencion, tipo=DocumentoCandidato.Tipo.CURRICULUM,
+            nombre="cv-autocad-mencion.pdf", archivo=SimpleUploadedFile("cv-autocad-mencion.pdf", b"x"),
+        )
+        DocumentoCandidato.objects.filter(pk=cls.cv_autocad_mencion.pk).update(
+            texto_extraido="Participó en proyectos donde se utilizó AutoCAD"
+        )
 
     def test_interpreta_conversacion_frase_y_deseable(self):
         resultado = interpretar_consulta(
@@ -92,6 +112,41 @@ class BusquedaAsistidaTests(TestCase):
         self.assertIn("transporte", resultado["obligatorios"])
         self.assertIn("minería", resultado["deseables"])
         self.assertFalse(resultado["ambiguo"])
+
+    def test_capacitacion_trata_alguno_como_conversacion_y_autocad_como_formacion(self):
+        for consulta in (
+            "¿Alguno tiene capacitación en AutoCAD?",
+            "¿Alguien tiene un curso de AutoCAD?",
+            "¿Alguno tiene formación en AutoCAD?",
+        ):
+            resultado = interpretar_consulta(consulta)
+            self.assertEqual(resultado["obligatorios"], ["AutoCAD"])
+            self.assertEqual(resultado["criterios"][0]["categoria"], "formación")
+            self.assertEqual(resultado["criterios"][0]["evidencia"], "capacitación por comprobar")
+
+    def test_capacitacion_distingue_curso_explicito_de_mencion(self):
+        self.assertEqual(
+            evidencia_capacitacion("Curso de AutoCAD aprobado en 2024", "AutoCAD"),
+            "capacitación explícita",
+        )
+        self.assertEqual(
+            evidencia_capacitacion("Proyectos donde se utilizó AutoCAD", "AutoCAD"),
+            "capacitación por comprobar",
+        )
+
+    def test_http_capacitacion_aisla_candidatos_y_muestra_estado_de_evidencia(self):
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse("talento_candidatos"),
+            {"q": "¿Alguno tiene capacitación en AutoCAD?", "modo_busqueda": "asistida"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            {c.nombre for c in response.context["pagina_candidatos"].object_list},
+            {"Autocad curso sintético", "Autocad mención sintética"},
+        )
+        self.assertContains(response, "capacitación explícita")
+        self.assertContains(response, "capacitación por comprobar")
 
     def test_formulaciones_equivalentes_conservan_los_mismos_criterios(self):
         consultas = (

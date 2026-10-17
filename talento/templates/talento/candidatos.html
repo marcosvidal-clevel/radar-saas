@@ -77,7 +77,7 @@
                 <td><a href="{% url 'talento_detalle_candidato' candidato.pk %}">{{ candidato.nombre }}</a></td>
                 <td>{{ candidato.profesion|default:"—" }}</td>
                 <td>{{ candidato.ciudad|default:candidato.region|default:"—" }}</td>
-                <td>{{ candidato.get_estado_display }}</td>
+                <td>{{ candidato.get_estado_display }}{% if candidato.capacitacion_evidencia %}<br><small>{{ candidato.capacitacion_evidencia }}</small>{% endif %}</td>
               </tr>
             {% endfor %}
           </tbody>

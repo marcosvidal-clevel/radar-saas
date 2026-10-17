@@ -19,7 +19,12 @@ from django.views.decorators.http import require_GET, require_http_methods
 from core.models import Membresia, Organizacion
 from .forms import ActualizarPostulacionForm, CandidatoForm, CandidatoVacanteForm, EntrevistaForm, PostulacionForm, VacanteEdicionForm, VacanteForm
 from .models import Candidato, DocumentoCandidato, Entrevista, HistorialEstadoPostulacion, Postulacion, Vacante, guardar_postulacion_con_historial
-from .busqueda_asistida import LIMITE_CONSULTA, aplicar_busqueda_asistida, interpretar_consulta
+from .busqueda_asistida import (
+    LIMITE_CONSULTA,
+    aplicar_busqueda_asistida,
+    evidencia_capacitacion,
+    interpretar_consulta,
+)
 
 
 def _administrador_candidatos():
@@ -186,6 +191,27 @@ def candidatos(request):
     queryset = queryset.order_by("nombre", "pk").distinct()
     paginador = Paginator(queryset, 20)
     pagina = paginador.get_page(request.GET.get("pagina"))
+    if interpretacion and any(
+        criterio["evidencia"] == "capacitación por comprobar"
+        for criterio in interpretacion["criterios"]
+    ):
+        terminos_formacion = [
+            criterio["texto"]
+            for criterio in interpretacion["criterios"]
+            if criterio["evidencia"] == "capacitación por comprobar"
+        ]
+        for candidato in pagina.object_list:
+            textos_cv = candidato.documentos.filter(
+                tipo="curriculum", vigente=True
+            ).values_list("texto_extraido", flat=True)
+            candidato.capacitacion_evidencia = max(
+                (
+                    evidencia_capacitacion(texto, termino)
+                    for texto in textos_cv
+                    for termino in terminos_formacion
+                ),
+                default="capacitación por comprobar",
+            )
 
     parametros = {"q": busqueda} if busqueda else {}
     if modo_busqueda == "asistida":
