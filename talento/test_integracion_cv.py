@@ -590,6 +590,7 @@ class MigracionEstadoExtraccionTests(TransactionTestCase):
         anterior = [("talento", "0005_documentocandidato_texto_extraido")]
         nueva = [("talento", "0006_documentocandidato_estado_extraccion")]
         ejecutor = MigrationExecutor(connection)
+        final = ejecutor.loader.graph.leaf_nodes()
         ejecutor.migrate(anterior)
         try:
             apps = ejecutor.loader.project_state(anterior).apps
@@ -619,4 +620,4 @@ class MigracionEstadoExtraccionTests(TransactionTestCase):
                 texto_extraido="Texto sintetico"
             ).exists())
         finally:
-            MigrationExecutor(connection).migrate(nueva)
+            MigrationExecutor(connection).migrate(final)
