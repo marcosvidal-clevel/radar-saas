@@ -14,7 +14,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_http_methods
 
 from core.models import Membresia, Organizacion
-from .forms import ActualizarPostulacionForm, CandidatoForm, PostulacionForm, VacanteForm
+from .forms import ActualizarPostulacionForm, CandidatoForm, CandidatoVacanteForm, PostulacionForm, VacanteForm
 from .models import Candidato, DocumentoCandidato, Postulacion, Vacante
 
 
@@ -474,6 +474,86 @@ def nueva_vacante(request):
         vacante = formulario.save()
         return redirect("seleccion_detalle_vacante", pk=vacante.pk)
     return render(request, "talento/nueva_vacante.html", {"formulario": formulario})
+
+
+@login_required(login_url="admin:login")
+@require_http_methods(["GET", "POST"])
+def nuevo_candidato_vacante(request, pk):
+    vacante = get_object_or_404(_vacantes_autorizadas(request), pk=pk)
+    administrador_candidatos = _administrador_candidatos()
+    administrador_documentos = _administrador_seleccion(DocumentoCandidato)
+    administrador_postulaciones = _administrador_seleccion(Postulacion)
+    if not (
+        request.user.has_perm("talento.add_candidato")
+        and request.user.has_perm("talento.add_documentocandidato")
+        and request.user.has_perm("talento.add_postulacion")
+        and administrador_candidatos.has_add_permission(request)
+        and administrador_documentos.has_add_permission(request)
+        and administrador_postulaciones.has_add_permission(request)
+    ):
+        raise PermissionDenied("No tienes permiso para agregar candidatos a esta vacante.")
+
+    formulario = CandidatoVacanteForm(request.POST or None, request.FILES or None)
+    coincidencias = Candidato.objects.none()
+    if request.method == "POST":
+        candidato_existente = request.POST.get("candidato_existente")
+        if candidato_existente:
+            candidato_preexistente = get_object_or_404(
+                administrador_candidatos.get_queryset(request).filter(
+                    organizacion_id=vacante.organizacion_id,
+                ),
+                pk=candidato_existente,
+            )
+            datos = request.POST.copy()
+            datos["nombre"] = candidato_preexistente.nombre
+            formulario = CandidatoVacanteForm(datos, request.FILES or None)
+        if formulario.is_valid():
+            email = formulario.cleaned_data.get("email", "").strip()
+            coincidencias = administrador_candidatos.get_queryset(request).filter(
+                organizacion_id=vacante.organizacion_id,
+                email__iexact=email,
+            ) if email else Candidato.objects.none()
+            if coincidencias.exists() and not candidato_existente:
+                return render(request, "talento/nuevo_candidato_vacante.html", {
+                    "vacante": vacante, "formulario": formulario,
+                    "coincidencias": coincidencias,
+                })
+            candidato = None
+            archivos_nuevos = []
+            try:
+                with transaction.atomic():
+                    if candidato_existente:
+                        candidato = get_object_or_404(coincidencias, pk=candidato_existente)
+                    else:
+                        candidato = formulario.save(commit=False)
+                        candidato.organizacion = vacante.organizacion
+                        candidato.save()
+                    archivo = formulario.cleaned_data.get("cv")
+                    documento = None
+                    if archivo:
+                        documento = DocumentoCandidato.objects.create(
+                            candidato=candidato,
+                            tipo=DocumentoCandidato.Tipo.CURRICULUM,
+                            nombre=f"CV de {candidato.nombre}",
+                            archivo=archivo,
+                            es_cv_principal=not candidato_existente,
+                            vigente=True,
+                        )
+                        archivos_nuevos.append((documento.archivo.storage, documento.archivo.name))
+                    Postulacion.objects.create(
+                        vacante=vacante, candidato=candidato, documento_cv=documento,
+                        fuente=Postulacion.Fuente.MANUAL,
+                    )
+            except Exception as error:
+                for storage, nombre in archivos_nuevos:
+                    storage.delete(nombre)
+                formulario.add_error(None, "No se pudo guardar el candidato, su CV o la postulación.")
+            else:
+                messages.success(request, "Candidato y postulación creados correctamente.")
+                return redirect("seleccion_detalle_vacante", pk=vacante.pk)
+    return render(request, "talento/nuevo_candidato_vacante.html", {
+        "vacante": vacante, "formulario": formulario, "coincidencias": coincidencias,
+    })
 
 
 @login_required(login_url="admin:login")

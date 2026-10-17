@@ -65,6 +65,7 @@
 
     <div class="tarjeta">
       <h2>Postulaciones</h2>
+      {% if puede_postular %}<p><a class="boton" href="{% url 'seleccion_nuevo_candidato' vacante.pk %}">Nuevo candidato para esta vacante</a></p>{% endif %}
       {% if postulaciones %}
         <div class="tabla-contenedor">
           <table>

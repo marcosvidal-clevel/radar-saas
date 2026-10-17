@@ -1,10 +1,12 @@
 from tempfile import TemporaryDirectory
+from io import BytesIO
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from docx import Document
 
 from core.models import Membresia, Organizacion
 from .models import Candidato, DocumentoCandidato, Postulacion, Vacante
@@ -22,7 +24,7 @@ class SeleccionVistasTests(TestCase):
         Membresia.objects.create(usuario=cls.ajeno, organizacion=cls.org_b, rol=Membresia.Rol.SUPERVISOR)
         permisos = Permission.objects.filter(
             content_type__app_label="talento",
-            codename__in=("view_vacante", "add_vacante", "view_postulacion", "add_postulacion", "change_postulacion", "view_candidato", "view_documentocandidato"),
+            codename__in=("view_vacante", "add_vacante", "view_postulacion", "add_postulacion", "change_postulacion", "view_candidato", "add_candidato", "add_documentocandidato", "view_documentocandidato"),
         )
         cls.usuario.user_permissions.add(*permisos)
         cls.ajeno.user_permissions.add(*permisos)
@@ -178,3 +180,62 @@ class SeleccionVistasTests(TestCase):
             "accion": "actualizar_postulacion", "postulacion": postulacion.pk,
             "estado": Postulacion.Estado.ENTREVISTA,
         }).status_code, 403)
+
+    def test_crea_candidato_y_postulacion_desde_vacante_sin_cv(self):
+        self.client.force_login(self.usuario)
+        respuesta = self.client.post(reverse("seleccion_nuevo_candidato", args=[self.vacante.pk]), {
+            "nombre": "Candidato nuevo", "email": "nuevo@example.com", "profesion": "Analista",
+        })
+        self.assertEqual(respuesta.status_code, 302)
+        candidato = Candidato.objects.get(email="nuevo@example.com")
+        self.assertEqual(candidato.organizacion_id, self.org_a.pk)
+        self.assertTrue(Postulacion.objects.filter(vacante=self.vacante, candidato=candidato).exists())
+
+    def test_crea_cv_extrae_texto_y_aisla_organizacion(self):
+        self.client.force_login(self.usuario)
+        respuesta = self.client.post(reverse("seleccion_nuevo_candidato", args=[self.vacante.pk]), {
+            "nombre": "Candidato con CV", "email": "cv@example.com",
+            "cv": SimpleUploadedFile("cv.txt", b"contenido", content_type="text/plain"),
+        })
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertFalse(Candidato.objects.filter(email="cv@example.com").exists())
+        self.assertContains(respuesta, "PDF, DOC o DOCX")
+
+    def test_crea_cv_docx_y_extrae_texto(self):
+        archivo_docx = BytesIO()
+        documento = Document()
+        documento.add_paragraph("Experiencia sintética desde Selección")
+        documento.save(archivo_docx)
+        self.client.force_login(self.usuario)
+        respuesta = self.client.post(reverse("seleccion_nuevo_candidato", args=[self.vacante.pk]), {
+            "nombre": "Candidato DOCX", "email": "docx@example.com",
+            "cv": SimpleUploadedFile("cv.docx", archivo_docx.getvalue(), content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+        })
+        self.assertEqual(respuesta.status_code, 302)
+        documento_guardado = DocumentoCandidato.objects.get(candidato__email="docx@example.com")
+        self.assertIn("Experiencia sintética desde Selección", documento_guardado.texto_extraido)
+
+    def test_detecta_coincidencia_y_vincula_sin_sobrescribir(self):
+        candidato = Candidato.objects.create(organizacion=self.org_a, nombre="Original", email="igual@example.com")
+        self.client.force_login(self.usuario)
+        respuesta = self.client.post(reverse("seleccion_nuevo_candidato", args=[self.vacante.pk]), {
+            "nombre": "Intento distinto", "email": "igual@example.com",
+        })
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(respuesta, "Candidato existente encontrado")
+        respuesta = self.client.post(reverse("seleccion_nuevo_candidato", args=[self.vacante.pk]), {
+            "candidato_existente": candidato.pk, "email": "igual@example.com",
+        })
+        self.assertEqual(respuesta.status_code, 302, respuesta.content.decode())
+        candidato.refresh_from_db()
+        self.assertEqual(candidato.nombre, "Original")
+        self.assertTrue(Postulacion.objects.filter(vacante=self.vacante, candidato=candidato).exists())
+
+    def test_nuevo_candidato_desde_vacante_requiere_permisos_y_csrf(self):
+        self.usuario.user_permissions.remove(Permission.objects.get(content_type__app_label="talento", codename="add_candidato"))
+        self.client.force_login(self.usuario)
+        self.assertEqual(self.client.get(reverse("seleccion_nuevo_candidato", args=[self.vacante.pk])).status_code, 403)
+        cliente = self.client_class(enforce_csrf_checks=True)
+        self.usuario.user_permissions.add(Permission.objects.get(content_type__app_label="talento", codename="add_candidato"))
+        cliente.force_login(self.usuario)
+        self.assertEqual(cliente.post(reverse("seleccion_nuevo_candidato", args=[self.vacante.pk]), {"nombre": "Sin token"}).status_code, 403)

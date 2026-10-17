@@ -80,6 +80,28 @@ class CandidatoForm(forms.ModelForm):
         return archivo
 
 
+class CandidatoVacanteForm(forms.ModelForm):
+    cv = forms.FileField(required=False, label="CV opcional")
+
+    class Meta:
+        model = Candidato
+        fields = (
+            "nombre", "email", "telefono", "profesion", "especialidad",
+            "region", "ciudad", "cv",
+        )
+        widgets = {"cv": forms.ClearableFileInput(attrs={"accept": ".pdf,.doc,.docx"})}
+
+    def clean_cv(self):
+        archivo = self.cleaned_data.get("cv")
+        if archivo:
+            extension = archivo.name.rsplit(".", 1)[-1].lower()
+            if extension not in {"pdf", "doc", "docx"}:
+                raise forms.ValidationError("El CV debe ser un archivo PDF, DOC o DOCX.")
+            if archivo.size > 10 * 1024 * 1024:
+                raise forms.ValidationError("El CV no puede superar los 10 MB.")
+        return archivo
+
+
 class VacanteForm(forms.ModelForm):
     class Meta:
         model = Vacante
