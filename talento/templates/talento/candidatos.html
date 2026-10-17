@@ -74,7 +74,7 @@
           <tbody>
             {% for candidato in pagina_candidatos %}
               <tr>
-                <td><a href="{% url 'talento_detalle_candidato' candidato.pk %}">{{ candidato.nombre }}</a></td>
+                <td><a href="{% url 'talento_detalle_candidato' candidato.pk %}">{{ candidato.nombre }}</a><br><a href="{% url 'talento_coincidencias_candidato' candidato.pk %}{% if parametros_filtros %}?{{ parametros_filtros }}{% endif %}">Ver coincidencias</a></td>
                 <td>{{ candidato.profesion|default:"—" }}</td>
                 <td>{{ candidato.ciudad|default:candidato.region|default:"—" }}</td>
                 <td>{{ candidato.get_estado_display }}{% if candidato.capacitacion_evidencia %}<br><small>{{ candidato.capacitacion_evidencia }}</small>{% endif %}</td>

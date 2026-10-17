@@ -10,6 +10,7 @@ from core.views import (
 
 from talento.views import (
     candidatos,
+    coincidencias_candidato,
     descargar_documento_candidato,
     detalle_candidato,
     editar_candidato,
@@ -60,6 +61,11 @@ urlpatterns = [
         "talento/candidatos/<int:pk>/",
         detalle_candidato,
         name="talento_detalle_candidato",
+    ),
+    path(
+        "talento/candidatos/<int:pk>/coincidencias/",
+        coincidencias_candidato,
+        name="talento_coincidencias_candidato",
     ),
     path(
         "talento/candidatos/nuevo/",

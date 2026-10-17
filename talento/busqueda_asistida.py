@@ -1,7 +1,9 @@
 import re
+from html import escape
 
 from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
 from django.db.models import Q
+from django.utils.safestring import mark_safe
 
 
 LIMITE_CONSULTA = 1000
@@ -269,6 +271,49 @@ def _vector():
 def _terminos_busqueda(termino):
     normalizado = termino.casefold()
     return SINONIMOS_PROFESIONALES.get(normalizado, (termino,))
+
+
+def terminos_para_resaltado(consulta, modo="normal", interpretacion=None):
+    """Return only search terms that can produce textual matches.
+
+    Assisted queries use the same interpreted terms as the search rather than
+    conversational words such as ``busco`` or ``alguien``.
+    """
+    if modo == "asistida":
+        interpretacion = interpretacion or interpretar_consulta(consulta)
+        terminos = interpretacion.get("obligatorios_busqueda", ())
+    else:
+        terminos = [frase or palabra for frase, palabra in _TOKEN.findall(consulta)]
+    resultado = []
+    vistos = set()
+    for termino in terminos:
+        for alternativa in _terminos_busqueda(termino):
+            clave = alternativa.casefold()
+            if len(alternativa) >= 3 and clave not in vistos:
+                vistos.add(clave)
+                resultado.append(alternativa)
+    return resultado
+
+
+def resaltar_coincidencias(texto, terminos):
+    """Escape CV text and wrap literal textual matches in a yellow mark."""
+    texto = texto or ""
+    terminos = sorted(
+        {termino for termino in terminos if termino},
+        key=len,
+        reverse=True,
+    )
+    if not texto or not terminos:
+        return mark_safe(escape(texto))
+    patron = re.compile("|".join(re.escape(termino) for termino in terminos), re.IGNORECASE)
+    partes = []
+    inicio = 0
+    for coincidencia in patron.finditer(texto):
+        partes.append(escape(texto[inicio:coincidencia.start()]))
+        partes.append("<mark class=\"coincidencia\">%s</mark>" % escape(coincidencia.group(0)))
+        inicio = coincidencia.end()
+    partes.append(escape(texto[inicio:]))
+    return mark_safe("".join(partes))
 
 
 def aplicar_busqueda_asistida(queryset, interpretacion):

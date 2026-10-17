@@ -24,6 +24,8 @@ from .busqueda_asistida import (
     aplicar_busqueda_asistida,
     evidencia_capacitacion,
     interpretar_consulta,
+    resaltar_coincidencias,
+    terminos_para_resaltado,
 )
 
 
@@ -247,6 +249,55 @@ def candidatos(request):
             "limite_consulta": LIMITE_CONSULTA,
             "hay_filtros": bool(parametros),
             "incluir_pruebas": incluir_pruebas,
+        },
+    )
+
+
+@login_required(login_url="admin:login")
+@require_GET
+def coincidencias_candidato(request, pk):
+    administrador = _administrador_candidatos()
+    if not request.user.is_staff or not administrador.has_view_permission(request):
+        raise PermissionDenied("No tienes acceso a Talento.")
+    candidato = get_object_or_404(
+        administrador.get_queryset(request).select_related("organizacion"),
+        pk=pk,
+    )
+    if not administrador.has_view_permission(request, candidato):
+        raise PermissionDenied("No tienes acceso a este candidato.")
+
+    consulta = request.GET.get("q", "").strip()[:LIMITE_CONSULTA]
+    modo = request.GET.get("modo_busqueda", "normal")
+    interpretacion = (
+        interpretar_consulta(consulta) if modo == "asistida" and consulta else None
+    )
+    terminos = terminos_para_resaltado(consulta, modo, interpretacion)
+    documentos = _documentos_consultables(request, candidato).filter(
+        tipo=DocumentoCandidato.Tipo.CURRICULUM,
+        vigente=True,
+    ).order_by("nombre", "pk")
+    documentos_con_texto = []
+    for documento in documentos:
+        if documento.texto_extraido:
+            documento.texto_resaltado = resaltar_coincidencias(
+                documento.texto_extraido,
+                [termino for termino in terminos if termino.casefold() in documento.texto_extraido.casefold()],
+            )
+        else:
+            documento.texto_resaltado = ""
+        documentos_con_texto.append(documento)
+    return render(
+        request,
+        "talento/coincidencias_candidato.html",
+        {
+            "candidato": candidato,
+            "documentos": documentos_con_texto,
+            "consulta": consulta,
+            "terminos": [
+                termino for termino in terminos
+                if any(termino.casefold() in (documento.texto_extraido or "").casefold() for documento in documentos_con_texto)
+            ],
+            "interpretacion": interpretacion,
         },
     )
 

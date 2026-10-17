@@ -12,6 +12,7 @@ from pypdf.generic import DictionaryObject, NameObject, DecodedStreamObject
 
 from core.models import Membresia, Organizacion
 from .models import Candidato, DocumentoCandidato
+from .busqueda_asistida import resaltar_coincidencias, terminos_para_resaltado
 
 
 class VistasTalentoTests(TestCase):
@@ -91,6 +92,55 @@ class VistasTalentoTests(TestCase):
             texto_extraido="Experiencia Zafirocurricular"
         )
         return documento
+
+    def test_coincidencias_resalta_acentos_y_escapa_contenido(self):
+        marcado = resaltar_coincidencias(
+            "Ingeniería <script>alert('x')</script> y prevención",
+            ["ingeniería", "prevención"],
+        )
+        self.assertIn("<mark class=\"coincidencia\">Ingeniería</mark>", marcado)
+        self.assertIn("&lt;script&gt;", marcado)
+        self.assertNotIn("<script>", marcado)
+
+    def test_coincidencias_muestra_cv_autorizado_y_descarga_original(self):
+        documento = self.crear_documento(self.candidato)
+        self.client.force_login(self.usuario)
+        respuesta = self.client.get(
+            reverse("talento_coincidencias_candidato", args=[self.candidato.pk]),
+            {"q": "Zafirocurricular"},
+        )
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(respuesta, "<mark class=\"coincidencia\">Zafirocurricular</mark>", html=True)
+        self.assertContains(respuesta, reverse("descargar_documento_candidato", args=[documento.pk]))
+        self.assertContains(respuesta, "No confirma capacitación, experiencia")
+
+    def test_coincidencias_asistidas_omite_conectores(self):
+        terminos = terminos_para_resaltado(
+            "Busco a alguien con capacitación en AutoCAD",
+            "asistida",
+        )
+        self.assertIn("AutoCAD", terminos)
+        self.assertNotIn("busco", [termino.casefold() for termino in terminos])
+        self.assertNotIn("alguien", [termino.casefold() for termino in terminos])
+
+    def test_coincidencias_no_expone_documento_de_otra_organizacion(self):
+        otro_documento = self.crear_documento(self.candidato_ajeno)
+        self.client.force_login(self.usuario)
+        respuesta = self.client.get(
+            reverse("talento_coincidencias_candidato", args=[self.candidato_ajeno.pk]),
+            {"q": "Zafirocurricular"},
+        )
+        self.assertEqual(respuesta.status_code, 404)
+
+    def test_coincidencias_sin_texto_muestra_mensaje(self):
+        documento = self.crear_documento(self.candidato)
+        DocumentoCandidato.objects.filter(pk=documento.pk).update(texto_extraido="")
+        self.client.force_login(self.usuario)
+        respuesta = self.client.get(
+            reverse("talento_coincidencias_candidato", args=[self.candidato.pk]),
+            {"q": "algo"},
+        )
+        self.assertContains(respuesta, "no tiene texto extraído disponible")
 
     @staticmethod
     def pdf_sintetico(texto="Experiencia Zafirocurricular"):
