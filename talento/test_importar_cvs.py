@@ -5,23 +5,22 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from docx import Document
-from pypdf import PdfWriter
-
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
-from django.core.exceptions import ValidationError
 from django.core import management
+from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import CommandError
 from django.db import IntegrityError
 from django.test import TestCase, override_settings
+from docx import Document
+from pypdf import PdfWriter
 
 from core.models import Membresia, Organizacion
 from .models import Candidato, CandidatoProcedencia, DocumentoCandidato, DocumentoProcedencia
 
 
-@override_settings(MEDIA_ROOT="/tmp/radar-import-command-tests")
 class ImportarCVsTests(TestCase):
     @classmethod
     def setUpTestData(cls):
@@ -60,7 +59,7 @@ class ImportarCVsTests(TestCase):
 
     def tearDown(self):
         self.temp.cleanup()
-        media = Path("/tmp/radar-import-command-tests")
+        media = Path(settings.MEDIA_ROOT)
         if media.exists():
             for path in sorted(media.rglob("*"), reverse=True):
                 if path.is_file() or path.is_symlink():
