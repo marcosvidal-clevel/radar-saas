@@ -1,6 +1,5 @@
 import hashlib
 import json
-import os
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -13,7 +12,7 @@ from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import CommandError
 from django.db import IntegrityError
-from django.test import TestCase, override_settings
+from django.test import TestCase
 from docx import Document
 from pypdf import PdfWriter
 

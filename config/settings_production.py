@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 
+from . import settings as base_settings
 from .settings import *  # noqa: F401,F403
 
 
@@ -42,7 +43,7 @@ DATABASES = {
     },
 }
 
-STATIC_ROOT = Path(os.environ.get("RADAR_STATIC_ROOT", BASE_DIR / "staticfiles"))
+STATIC_ROOT = Path(os.environ.get("RADAR_STATIC_ROOT", base_settings.BASE_DIR / "staticfiles"))
 MEDIA_ROOT = Path(os.environ.get("RADAR_MEDIA_ROOT", "/var/lib/radar/media_privada"))
 STATIC_URL = os.environ.get("RADAR_STATIC_URL", "/static/")
 
@@ -63,7 +64,10 @@ CSRF_TRUSTED_ORIGINS = env_list("RADAR_CSRF_TRUSTED_ORIGINS", required_value=Tru
 if env_bool("RADAR_TRUST_PROXY_HEADERS"):
     TRUSTED_PROXY_IPS = env_list("RADAR_TRUSTED_PROXY_IPS", required_value=True)
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-    MIDDLEWARE = ["config.proxy.TrustedProxyHeadersMiddleware", *MIDDLEWARE]
+    MIDDLEWARE = [
+        "config.proxy.TrustedProxyHeadersMiddleware",
+        *base_settings.MIDDLEWARE,
+    ]
 
 LOGGING = {
     "version": 1,

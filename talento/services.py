@@ -3,7 +3,7 @@ from django.db import transaction
 
 from core.models import Membresia
 
-from .models import Candidato, CandidatoProcedencia, DocumentoCandidato
+from .models import Candidato, CandidatoProcedencia
 
 
 def _puede_gestionar(usuario, candidato):

@@ -18,7 +18,7 @@ from django.views.decorators.http import require_GET, require_http_methods
 
 from core.models import Membresia, Organizacion
 from .forms import ActualizarPostulacionForm, CandidatoForm, CandidatoVacanteForm, DocumentoAntecedenteForm, EntrevistaForm, PostulacionForm, VacanteEdicionForm, VacanteForm
-from .models import Candidato, DocumentoCandidato, Entrevista, HistorialEstadoPostulacion, Postulacion, Vacante, guardar_postulacion_con_historial
+from .models import Candidato, DocumentoCandidato, Entrevista, Postulacion, Vacante, guardar_postulacion_con_historial
 from .busqueda_asistida import (
     LIMITE_CONSULTA,
     aplicar_busqueda_asistida,
@@ -434,7 +434,6 @@ def agregar_antecedente(request, pk):
         candidato=candidato,
     )
     if request.method == "POST" and formulario.is_valid():
-        archivo = formulario.cleaned_data["archivo"]
         documento = formulario.save(commit=False)
         documento.candidato = candidato
         documento.agregado_por = request.user
@@ -871,7 +870,7 @@ def nuevo_candidato_vacante(request, pk):
                         vacante=vacante, candidato=candidato, documento_cv=documento,
                         fuente=Postulacion.Fuente.MANUAL,
                     )
-            except Exception as error:
+            except Exception:
                 for storage, nombre in archivos_nuevos:
                     storage.delete(nombre)
                 formulario.add_error(None, "No se pudo guardar el candidato, su CV o la postulación.")

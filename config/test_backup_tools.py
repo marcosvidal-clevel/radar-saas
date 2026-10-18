@@ -14,7 +14,9 @@ class BackupToolValidationTests(TestCase):
         document.write_bytes(b"synthetic document")
         import hashlib
 
-        digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+        def digest(path):
+            return hashlib.sha256(path.read_bytes()).hexdigest()
+
         (root / "manifest.json").write_text(
             '{"backup_version":"1","database_dump":{"path":"database.dump","sha256":"%s","size":14},"documents":[{"path":"cv.txt","sha256":"%s","size":18}]}\n'
             % (digest(root / "database.dump"), digest(document)),

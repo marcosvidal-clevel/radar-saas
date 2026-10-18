@@ -8,7 +8,7 @@ from django.contrib.auth import get_user_model
 from django.core.files import File
 from django.core.files.storage import default_storage
 from django.core.management.base import BaseCommand, CommandError
-from django.db import IntegrityError, transaction
+from django.db import transaction
 
 from core.models import Membresia, Organizacion
 from talento.models import (

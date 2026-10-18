@@ -124,7 +124,7 @@ class VistasTalentoTests(TestCase):
         self.assertNotIn("alguien", [termino.casefold() for termino in terminos])
 
     def test_coincidencias_no_expone_documento_de_otra_organizacion(self):
-        otro_documento = self.crear_documento(self.candidato_ajeno)
+        self.crear_documento(self.candidato_ajeno)
         self.client.force_login(self.usuario)
         respuesta = self.client.get(
             reverse("talento_coincidencias_candidato", args=[self.candidato_ajeno.pk]),
@@ -186,7 +186,6 @@ class VistasTalentoTests(TestCase):
 
     def test_busqueda_acepta_terminos_fragmentados(self):
         documento = self.crear_documento(self.candidato)
-        documento_pk = documento.pk
         DocumentoCandidato.objects.filter(pk=documento.pk).update(
             texto_extraido="Subgerente de Proye ctos"
         )

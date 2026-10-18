@@ -4,7 +4,6 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.core.files.base import ContentFile
 from django.test import RequestFactory, TestCase
 
 from core.models import Membresia, Organizacion

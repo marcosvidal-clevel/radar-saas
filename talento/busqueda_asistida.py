@@ -230,7 +230,6 @@ def _agrupar_instituciones(palabras):
         "y", "o", "para", "con", "que", "quien", "quién", "en", "de",
     }
     while i < len(palabras):
-        normalizado = palabras[i].casefold()
         tipo = None
         longitud_tipo = 1
         for nombre, partes in TIPOS_INSTITUCION.items():

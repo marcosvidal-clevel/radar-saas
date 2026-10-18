@@ -56,7 +56,19 @@ jobs:
       - name: Instalar dependencias
         run: |
           python -m venv .venv
-          .venv/bin/python -m pip install -r requirements.txt
+          .venv/bin/python -m pip install -r requirements-dev.txt
+
+      - name: Ruff
+        id: ruff
+        run: |
+          start=$(date +%s)
+          set +e
+          .venv/bin/ruff check . 2>&1 | tee "$RUNNER_TEMP/radar-ruff.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          end=$(date +%s)
+          echo "duration=$((end - start))s" >> "$GITHUB_OUTPUT"
+          exit "$status"
 
       - name: Comprobaciones Django y cambios de migración
         id: checks
@@ -96,8 +108,15 @@ jobs:
           TESTS_DURATION: ${{ steps.tests.outputs.duration }}
           TESTS_DISCOVERED: ${{ steps.tests.outputs.discovered }}
           TESTS_EXECUTED: ${{ steps.tests.outputs.executed }}
+          RUFF_OUTCOME: ${{ steps.ruff.outcome }}
+          RUFF_DURATION: ${{ steps.ruff.outputs.duration }}
           JOB_STATUS: ${{ job.status }}
         run: |
+          case "$RUFF_OUTCOME" in
+            success) ruff_result="aprobado" ;;
+            failure) ruff_result="fallido" ;;
+            *) ruff_result="no ejecutado (${RUFF_OUTCOME:-sin resultado})" ;;
+          esac
           case "$TESTS_OUTCOME" in
             success)
               test_result="aprobadas: ${TESTS_EXECUTED:-suite completada}"
@@ -114,6 +133,7 @@ jobs:
             echo
             echo "| Validación | Resultado | Duración |"
             echo "|---|---:|---:|"
+            echo "| Ruff (`ruff check .`) | ${ruff_result} | ${RUFF_DURATION:-n/d} |"
             echo "| Django check + makemigrations --check --dry-run | ${CHECKS_OUTCOME:-no ejecutado} | ${CHECKS_DURATION:-n/d} |"
             echo "| Suite config, core y talento | ${test_result}; ${TESTS_DISCOVERED:-sin conteo} | ${TESTS_DURATION:-n/d} |"
             echo

@@ -5,6 +5,7 @@ import os
 import tempfile
 from pathlib import Path
 
+from . import settings as base_settings
 from .settings import *  # noqa: F401,F403
 
 
@@ -29,7 +30,7 @@ TEST_DB_HOST = os.environ.get("RADAR_TEST_DB_HOST", "127.0.0.1").strip()
 TEST_DB_PORT = os.environ.get("RADAR_TEST_DB_PORT", "5432").strip()
 TEST_DB_SSLMODE = os.environ.get("RADAR_TEST_DB_SSLMODE", "prefer").strip()
 
-DEVELOPMENT_DATABASE = DATABASES["default"]
+DEVELOPMENT_DATABASE = base_settings.DATABASES["default"]
 if TEST_DB_NAME == DEVELOPMENT_DATABASE["NAME"]:
     raise RuntimeError("RADAR_TEST_DB_NAME cannot be the development database")
 
@@ -66,7 +67,7 @@ _media_temp = tempfile.TemporaryDirectory(prefix="radar-test-media-")
 atexit.register(_media_temp.cleanup)
 MEDIA_ROOT = Path(_media_temp.name).resolve()
 
-_private_media = (BASE_DIR / "media_privada").resolve()
+_private_media = (base_settings.BASE_DIR / "media_privada").resolve()
 if MEDIA_ROOT == _private_media or _private_media in MEDIA_ROOT.parents:
     _media_temp.cleanup()
     raise RuntimeError("Test MEDIA_ROOT cannot be media_privada or inside it")
