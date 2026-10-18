@@ -1,5 +1,8 @@
+import json
+
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.utils import timezone
 
 from core.models import Membresia
 
@@ -39,8 +42,8 @@ def _puede_gestionar_documento(usuario, documento):
 
 
 @transaction.atomic
-def consolidar_candidato(canonico, duplicado, usuario):
-    """Consolida explícitamente una ficha, preservando relaciones y archivos."""
+def consolidar_candidato(canonico, duplicado, usuario, *, resolucion_telefono=None):
+    """Consolida sin elegir vigencia telefónica; admite conservar_canonico explícito."""
     canonico = Candidato.objects.select_for_update().get(pk=canonico.pk)
     duplicado = Candidato.objects.select_for_update().get(pk=duplicado.pk)
     if canonico.pk == duplicado.pk:
@@ -59,19 +62,57 @@ def consolidar_candidato(canonico, duplicado, usuario):
     if any(not _puede_gestionar_documento(usuario, documento) for documento in documentos_transferidos):
         raise PermissionDenied("El usuario no puede gestionar todos los documentos transferidos.")
 
+    conflicto_telefono = bool(
+        canonico.telefono and duplicado.telefono
+        and canonico.telefono != duplicado.telefono
+    )
+    if resolucion_telefono is not None and (
+        resolucion_telefono != "conservar_canonico" or not conflicto_telefono
+    ):
+        raise ValidationError({"telefono": "Resolución telefónica inválida o sin conflicto."})
+
     conflictos = []
     for field in ("email", "telefono", "linkedin", "profesion", "especialidad", "region", "ciudad", "experiencia", "competencias", "notas"):
         left, right = getattr(canonico, field), getattr(duplicado, field)
         if left and right and left != right:
+            if field == "telefono" and resolucion_telefono == "conservar_canonico":
+                continue
             conflictos.append(field)
     if conflictos:
         raise ValidationError({"datos": f"Conflictos en: {', '.join(conflictos)}."})
     if set(duplicado.postulaciones.values_list("vacante_id", flat=True)) & set(canonico.postulaciones.values_list("vacante_id", flat=True)):
         raise ValidationError("Las fichas tienen postulaciones para la misma vacante.")
 
+    nota_telefono = None
+    if resolucion_telefono == "conservar_canonico":
+        def origen_telefono(candidato):
+            return {
+                "candidato_id": candidato.pk,
+                "telefono": candidato.telefono,
+                "origen_importacion": candidato.origen_importacion,
+                "identificador_origen": candidato.identificador_origen,
+                "procedencias": list(candidato.procedencias.order_by("pk").values(
+                    "organizacion_id", "origen_importacion", "identificador_origen"
+                )),
+            }
+
+        nota_telefono = {
+            "resolucion": "conservar_canonico",
+            "vigencia": "no determinada para ninguno de los teléfonos",
+            "usuario_id": usuario.pk,
+            "fecha": timezone.now().isoformat(),
+            "canonico": origen_telefono(canonico),
+            "duplicado": origen_telefono(duplicado),
+        }
+
     for field in ("email", "telefono", "linkedin", "profesion", "especialidad", "region", "ciudad", "experiencia", "competencias", "notas"):
         if not getattr(canonico, field) and getattr(duplicado, field):
             setattr(canonico, field, getattr(duplicado, field))
+    if nota_telefono is not None:
+        canonico.notas = "\n\n".join(filter(None, (
+            canonico.notas,
+            "Nota de consolidación telefónica:\n" + json.dumps(nota_telefono, ensure_ascii=False),
+        )))
     canonico.save()
 
     duplicado.documentos.update(candidato=canonico, es_cv_principal=False)

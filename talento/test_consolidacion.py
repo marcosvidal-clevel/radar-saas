@@ -11,6 +11,7 @@ from django.contrib.auth.models import Permission
 from django.core import management
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import transaction
 from django.test import TestCase, override_settings
 
 from core.models import Membresia, Organizacion
@@ -19,8 +20,14 @@ from .models import Candidato, CandidatoProcedencia, DocumentoCandidato, Postula
 from .services import consolidar_candidato
 
 
-@override_settings(MEDIA_ROOT="/tmp/radar-consolidacion-tests")
 class ConsolidacionTests(TestCase):
+    def setUp(self):
+        media = tempfile.TemporaryDirectory(prefix="radar-consolidacion-tests-")
+        self.addCleanup(media.cleanup)
+        settings = override_settings(MEDIA_ROOT=media.name)
+        settings.enable()
+        self.addCleanup(settings.disable)
+
     @classmethod
     def setUpTestData(cls):
         cls.org = Organizacion.objects.create(nombre="Org consolidación", slug="org-consolidacion")
@@ -284,3 +291,124 @@ class ConsolidacionTests(TestCase):
                 elif path.is_dir():
                     path.rmdir()
             root.rmdir()
+
+    def telefonos_distintos(self):
+        canonical, duplicate = self.candidates()
+        canonical.telefono = "+56000000001"
+        canonical.origen_importacion = "fuente-canonica"
+        canonical.identificador_origen = "origen-1"
+        canonical.save()
+        duplicate.telefono = "+56000000002"
+        duplicate.save()
+        return canonical, duplicate
+
+    def test_resolucion_telefonica_conserva_valores_y_procedencias(self):
+        canonical, duplicate = self.telefonos_distintos()
+        canonical.notas = "Nota anterior"
+        canonical.save()
+        moved = self.doc(duplicate, "telefono.pdf")
+        result = consolidar_candidato(
+            canonical, duplicate, self.admin, resolucion_telefono="conservar_canonico"
+        )
+        canonical.refresh_from_db()
+        duplicate.refresh_from_db()
+        moved.refresh_from_db()
+        self.assertEqual(canonical.telefono, "+56000000001")
+        self.assertEqual(duplicate.telefono, "+56000000002")
+        self.assertTrue(canonical.notas.startswith("Nota anterior\n\n"))
+        note = json.loads(canonical.notas.split("Nota de consolidación telefónica:\n")[1])
+        self.assertEqual(note["canonico"]["telefono"], canonical.telefono)
+        self.assertEqual(note["canonico"]["candidato_id"], canonical.pk)
+        self.assertEqual(note["canonico"]["identificador_origen"], "origen-1")
+        self.assertEqual(note["duplicado"]["telefono"], duplicate.telefono)
+        self.assertEqual(note["duplicado"]["candidato_id"], duplicate.pk)
+        self.assertEqual(note["duplicado"]["procedencias"], [{
+            "organizacion_id": self.org.pk,
+            "origen_importacion": "fuente", "identificador_origen": "origen-2",
+        }])
+        self.assertEqual(note["usuario_id"], self.admin.pk)
+        self.assertIn("no determinada", note["vigencia"])
+        self.assertEqual(result.pk, canonical.pk)
+        self.assertEqual(moved.candidato_id, canonical.pk)
+        self.assertFalse(moved.es_cv_principal)
+        self.assertEqual(duplicate.consolidado_en_id, canonical.pk)
+
+    def test_conflicto_telefono_sigue_bloqueando_sin_resolucion(self):
+        canonical, duplicate = self.telefonos_distintos()
+        with self.assertRaisesMessage(ValidationError, "telefono"):
+            consolidar_candidato(canonical, duplicate, self.admin)
+        canonical.refresh_from_db()
+        duplicate.refresh_from_db()
+        self.assertEqual(canonical.notas, "")
+        self.assertIsNone(duplicate.consolidado_en_id)
+
+    def test_resolucion_telefonica_no_autoriza_otros_conflictos(self):
+        for field in ("email", "linkedin", "profesion", "especialidad", "region",
+                      "ciudad", "experiencia", "competencias", "notas"):
+            with self.subTest(field=field), transaction.atomic():
+                canonical, duplicate = self.telefonos_distintos()
+                Candidato.objects.filter(pk=canonical.pk).update(**{field: "valor-a"})
+                Candidato.objects.filter(pk=duplicate.pk).update(**{field: "valor-b"})
+                with self.assertRaisesMessage(ValidationError, field):
+                    consolidar_candidato(
+                        canonical, duplicate, self.admin,
+                        resolucion_telefono="conservar_canonico",
+                    )
+                duplicate.refresh_from_db()
+                self.assertIsNone(duplicate.consolidado_en_id)
+                transaction.set_rollback(True)
+
+    def test_resolucion_telefonica_mantiene_permisos_y_organizacion(self):
+        canonical, duplicate = self.telefonos_distintos()
+        with self.assertRaises(PermissionDenied):
+            consolidar_candidato(
+                canonical, duplicate, self.other_user, resolucion_telefono="conservar_canonico"
+            )
+        self.doc(duplicate, "permiso.pdf")
+        with mock.patch("talento.services._puede_gestionar_documento", return_value=False):
+            with self.assertRaises(PermissionDenied):
+                consolidar_candidato(
+                    canonical, duplicate, self.admin, resolucion_telefono="conservar_canonico"
+                )
+        Candidato.objects.filter(pk=duplicate.pk).update(organizacion=self.other_org)
+        with self.assertRaisesMessage(ValidationError, "organización"):
+            consolidar_candidato(
+                canonical, duplicate, self.admin, resolucion_telefono="conservar_canonico"
+            )
+
+    def test_resolucion_telefonica_rollback_incluye_nota_y_relaciones(self):
+        canonical, duplicate = self.telefonos_distintos()
+        moved = self.doc(duplicate, "rollback.pdf")
+        original_save = Candidato.save
+
+        def fail_duplicate(instance, *args, **kwargs):
+            if instance.pk == duplicate.pk:
+                raise RuntimeError("fallo sintético posterior a transferencias")
+            return original_save(instance, *args, **kwargs)
+
+        with mock.patch.object(Candidato, "save", fail_duplicate):
+            with self.assertRaises(RuntimeError):
+                consolidar_candidato(
+                    canonical, duplicate, self.admin, resolucion_telefono="conservar_canonico"
+                )
+        canonical.refresh_from_db()
+        duplicate.refresh_from_db()
+        moved.refresh_from_db()
+        self.assertEqual(canonical.notas, "")
+        self.assertEqual(canonical.telefono, "+56000000001")
+        self.assertEqual(duplicate.telefono, "+56000000002")
+        self.assertIsNone(duplicate.consolidado_en_id)
+        self.assertEqual(moved.candidato_id, duplicate.pk)
+        self.assertTrue(moved.es_cv_principal)
+        self.assertEqual(CandidatoProcedencia.objects.get(identificador_origen="origen-2").candidato_id, duplicate.pk)
+
+    def test_rechaza_resolucion_invalida_o_sin_conflicto(self):
+        canonical, duplicate = self.telefonos_distintos()
+        with self.assertRaises(ValidationError):
+            consolidar_candidato(canonical, duplicate, self.admin, resolucion_telefono=True)
+        duplicate.telefono = canonical.telefono
+        duplicate.save()
+        with self.assertRaises(ValidationError):
+            consolidar_candidato(
+                canonical, duplicate, self.admin, resolucion_telefono="conservar_canonico"
+            )
