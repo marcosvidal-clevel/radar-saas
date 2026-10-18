@@ -686,3 +686,7 @@ class Entrevista(models.Model):
         super().clean()
         if self.postulacion_id and self.postulacion.vacante.organizacion_id != self.postulacion.candidato.organizacion_id:
             raise ValidationError("La postulación debe pertenecer a una organización válida.")
+
+
+# Modelos separados para entradas sin una persona confirmada.
+from .entradas_models import EntradaPendiente, RevisionEntrada  # noqa: E402,F401

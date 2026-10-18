@@ -1,0 +1,13 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<p><a href="{% url 'entradas_pendientes' %}">Bandeja</a> · <a href="{% url 'entrada_descargar' entrada.pk %}">Descargar original</a></p>
+<dl><dt>Procedencia</dt><dd>{{ entrada.organizacion }} / {{ entrada.origen_importacion }} / {{ entrada.identificador_origen }} / {{ entrada.clave_documental }}</dd><dt>Archivo original</dt><dd>{{ entrada.nombre_archivo_original }} · SHA-256 {{ entrada.sha256 }}</dd>
+<dt>Identidad</dt><dd>{{ entrada.nombre|default:"No consta" }} · {{ entrada.get_identidad_estado_display }}</dd><dt>Profesión</dt><dd>{{ entrada.profesion|default:"No consta" }} · {{ entrada.get_profesion_estado_display }}</dd><dt>Ubicación</dt><dd>{{ entrada.region }} {{ entrada.ciudad }} · {{ entrada.get_ubicacion_estado_display }}</dd>
+<dt>Teléfono personal</dt><dd>{{ entrada.telefono|default:"Sin valor" }} · {{ entrada.get_telefono_estado_display }}</dd><dt>Correo personal</dt><dd>{{ entrada.email|default:"Sin valor" }} · {{ entrada.get_email_estado_display }}</dd><dt>Remitente (no es contacto personal)</dt><dd>{{ entrada.correo_remitente|default:"No consta" }}</dd>
+<dt>Clasificación</dt><dd>{{ entrada.get_tipo_documento_display }} · {% if entrada.clasificacion_confirmada %}confirmada{% else %}no confirmada{% endif %}</dd><dt>Limitación de lectura</dt><dd>{{ entrada.limitacion_lectura|default:"No registrada"|linebreaksbr }}</dd><dt>Información por completar</dt><dd>{{ entrada.informacion_por_completar|default:"No registrada"|linebreaksbr }}</dd><dt>Seguimiento</dt><dd>{{ entrada.get_seguimiento_display }}</dd></dl>
+{% if entrada.seguimiento != 'resuelto' and perms.talento.change_entradapendiente %}<p><a href="{% url 'entrada_editar' entrada.pk %}">Completar y confirmar datos</a> · <a href="{% url 'entrada_resolver' entrada.pk %}">Resolver: crear o vincular candidato</a></p>{% endif %}
+{% if entrada.candidato_id %}<p>Resuelta hacia candidato #{{ entrada.candidato_id }} y documento #{{ entrada.documento_id }}.</p>{% endif %}
+<h2>Posibles coincidencias a revisar</h2><ul>{% for candidato in candidatos %}<li>#{{ candidato.pk }} · {{ candidato.nombre }}</li>{% empty %}<li>No se muestran coincidencias.</li>{% endfor %}</ul>
+<h2>Historial de revisiones y confirmaciones</h2><p>Cada revisión conserva una instantánea de los datos con usuario, fecha y fuente.</p>
+{% for revision in revisiones %}<section><h3>{{ revision.fecha }} · {{ revision.usuario }} · {{ revision.accion }}</h3><p>{{ revision.fuente|linebreaksbr }}</p><details><summary>Datos de esta revisión</summary><dl>{% for key,value in revision.datos.items %}<dt>{{ key }}</dt><dd>{{ value|default_if_none:"" }}</dd>{% endfor %}</dl></details></section>{% endfor %}
+{% endblock %}

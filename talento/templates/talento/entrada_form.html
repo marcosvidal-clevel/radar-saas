@@ -1,0 +1,6 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<p><a href="{% url 'entradas_pendientes' %}">Volver a la bandeja</a></p>
+{% if resolver %}<p>Confirme antes identidad y clasificación. No se elige una persona solo por nombre, correo o hash. Los datos de una ficha existente no se sustituyen. La resolución puede guardar un CV con limitación de lectura, conservando su archivo.</p>{% else %}<p>Nombre y ubicación pueden quedar sin confirmar. No se exige domicilio completo. Un archivo sin texto no es inválido ni demuestra identidad incorrecta. El seguimiento «requiere contactar» es solo un registro: no envía mensajes.</p>{% endif %}
+<form method="post" enctype="multipart/form-data">{% csrf_token %}{{ form.as_p }}<button type="submit">{% if resolver %}Confirmar resolución{% else %}Guardar revisión{% endif %}</button></form>
+{% endblock %}

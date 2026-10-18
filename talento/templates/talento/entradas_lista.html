@@ -1,0 +1,9 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<p>Conserve la entrada aunque la identidad sea desconocida. No se envían mensajes ni se indexan los archivos como CV de una persona.</p>
+{% if perms.talento.add_entradapendiente %}<p><a href="{% url 'entrada_nueva' %}" class="addlink">Nueva entrada pendiente</a></p>{% endif %}
+<form method="get"><label for="estado">Seguimiento</label> <select id="estado" name="estado"><option value="">Todos</option>{% for value,label in estados %}<option value="{{ value }}" {% if estado == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select> <button type="submit">Filtrar</button></form>
+<table><thead><tr><th>Procedencia</th><th>Organización</th><th>Identidad</th><th>Seguimiento</th><th>Información por completar</th></tr></thead><tbody>
+{% for entrada in entradas %}<tr><td><a href="{% url 'entrada_detalle' entrada.pk %}">{{ entrada.identificador_origen }}</a></td><td>{{ entrada.organizacion }}</td><td>{{ entrada.nombre|default:"Sin nombre confirmado" }} · {{ entrada.get_identidad_estado_display }}</td><td>{{ entrada.get_seguimiento_display }}</td><td>{{ entrada.informacion_por_completar|truncatewords:20 }}</td></tr>{% empty %}<tr><td colspan="5">No hay entradas en este conjunto autorizado.</td></tr>{% endfor %}</tbody></table>
+{% if entradas.has_previous %}<a href="?estado={{ estado|urlencode }}&page={{ entradas.previous_page_number }}">Anterior</a>{% endif %} Página {{ entradas.number }} de {{ entradas.paginator.num_pages }} {% if entradas.has_next %}<a href="?estado={{ estado|urlencode }}&page={{ entradas.next_page_number }}">Siguiente</a>{% endif %}
+{% endblock %}

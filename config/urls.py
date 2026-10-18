@@ -1,6 +1,7 @@
 
 from django.contrib import admin
 from django.urls import path
+from talento import entradas_views
 
 from core.views import (
     detalle_oportunidad,
@@ -29,6 +30,12 @@ from talento.views import (
 
 
 urlpatterns = [
+    path("seleccion/entradas/", entradas_views.bandeja, name="entradas_pendientes"),
+    path("seleccion/entradas/nueva/", entradas_views.editar, name="entrada_nueva"),
+    path("seleccion/entradas/<int:pk>/", entradas_views.detalle, name="entrada_detalle"),
+    path("seleccion/entradas/<int:pk>/editar/", entradas_views.editar, name="entrada_editar"),
+    path("seleccion/entradas/<int:pk>/resolver/", entradas_views.resolver, name="entrada_resolver"),
+    path("seleccion/entradas/<int:pk>/archivo/", entradas_views.descargar, name="entrada_descargar"),
     path(
         "admin/",
         admin.site.urls,
