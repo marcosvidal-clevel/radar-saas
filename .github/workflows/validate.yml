@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   validate:
-    name: Django y suite completa
+    name: Django, navegador y suite completa
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -51,12 +51,15 @@ jobs:
         with:
           python-version: "3.14"
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: requirements-dev.txt
 
       - name: Instalar dependencias
         run: |
           python -m venv .venv
           .venv/bin/python -m pip install -r requirements-dev.txt
+
+      - name: Instalar Chromium y dependencias del sistema
+        run: .venv/bin/python -m playwright install --with-deps chromium
 
       - name: Ruff
         id: ruff
@@ -83,7 +86,7 @@ jobs:
           echo "duration=$((end - start))s" >> "$GITHUB_OUTPUT"
           exit "$status"
 
-      - name: Suite completa config, core y talento
+      - name: Suite completa config, core, talento y navegador
         id: tests
         run: |
           start=$(date +%s)
@@ -135,7 +138,7 @@ jobs:
             echo "|---|---:|---:|"
             echo "| Ruff (`ruff check .`) | ${ruff_result} | ${RUFF_DURATION:-n/d} |"
             echo "| Django check + makemigrations --check --dry-run | ${CHECKS_OUTCOME:-no ejecutado} | ${CHECKS_DURATION:-n/d} |"
-            echo "| Suite config, core y talento | ${test_result}; ${TESTS_DISCOVERED:-sin conteo} | ${TESTS_DURATION:-n/d} |"
+            echo "| Suite completa config, core, talento y navegador (Chromium) | ${test_result}; ${TESTS_DISCOVERED:-sin conteo} | ${TESTS_DURATION:-n/d} |"
             echo
             echo "Estado del job: **${JOB_STATUS}**"
           } >> "$GITHUB_STEP_SUMMARY"
