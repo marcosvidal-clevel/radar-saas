@@ -1,0 +1,121 @@
+name: Validar RADAR
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: radar-validation-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Django y suite completa
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: radar_ci_control
+          POSTGRES_USER: radar_ci_user
+          POSTGRES_PASSWORD: radar_ci_password_only_for_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U radar_ci_user -d radar_ci_control"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DJANGO_SETTINGS_MODULE: config.settings_test
+      RADAR_TEST_DB_NAME: radar_ci_control
+      RADAR_TEST_DB_USER: radar_ci_user
+      RADAR_TEST_DB_PASSWORD: radar_ci_password_only_for_ci
+      RADAR_TEST_DB_HOST: 127.0.0.1
+      RADAR_TEST_DB_PORT: 5432
+      RADAR_TEST_DB_SSLMODE: disable
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Configurar Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Instalar dependencias
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -r requirements.txt
+
+      - name: Comprobaciones Django y cambios de migración
+        id: checks
+        run: |
+          start=$(date +%s)
+          set +e
+          .venv/bin/python manage.py check && \
+            .venv/bin/python manage.py makemigrations --check --dry-run
+          status=$?
+          set -e
+          end=$(date +%s)
+          echo "duration=$((end - start))s" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Suite completa config, core y talento
+        id: tests
+        run: |
+          start=$(date +%s)
+          set +e
+          ./scripts/test_suite.sh 2>&1 | tee "$RUNNER_TEMP/radar-tests.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          end=$(date +%s)
+          echo "duration=$((end - start))s" >> "$GITHUB_OUTPUT"
+          discovered=$(grep -Eo 'Found [0-9]+ test\(s\)\.' "$RUNNER_TEMP/radar-tests.log" | tail -n 1 || true)
+          executed=$(grep -Eo 'Ran [0-9]+ tests? in [0-9.]+s' "$RUNNER_TEMP/radar-tests.log" | tail -n 1 || true)
+          echo "discovered=$discovered" >> "$GITHUB_OUTPUT"
+          echo "executed=$executed" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Publicar resumen
+        if: always()
+        env:
+          CHECKS_OUTCOME: ${{ steps.checks.outcome }}
+          CHECKS_DURATION: ${{ steps.checks.outputs.duration }}
+          TESTS_OUTCOME: ${{ steps.tests.outcome }}
+          TESTS_DURATION: ${{ steps.tests.outputs.duration }}
+          TESTS_DISCOVERED: ${{ steps.tests.outputs.discovered }}
+          TESTS_EXECUTED: ${{ steps.tests.outputs.executed }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          case "$TESTS_OUTCOME" in
+            success)
+              test_result="aprobadas: ${TESTS_EXECUTED:-suite completada}"
+              ;;
+            failure)
+              test_result="fallidas: ${TESTS_EXECUTED:-la suite no terminó}"
+              ;;
+            *)
+              test_result="no ejecutadas (${TESTS_OUTCOME:-sin resultado})"
+              ;;
+          esac
+          {
+            echo "## Validación RADAR"
+            echo
+            echo "| Validación | Resultado | Duración |"
+            echo "|---|---:|---:|"
+            echo "| Django check + makemigrations --check --dry-run | ${CHECKS_OUTCOME:-no ejecutado} | ${CHECKS_DURATION:-n/d} |"
+            echo "| Suite config, core y talento | ${test_result}; ${TESTS_DISCOVERED:-sin conteo} | ${TESTS_DURATION:-n/d} |"
+            echo
+            echo "Estado del job: **${JOB_STATUS}**"
+          } >> "$GITHUB_STEP_SUMMARY"
