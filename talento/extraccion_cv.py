@@ -110,11 +110,14 @@ def extraer_texto_cv(archivo, nombre_archivo):
 
     try:
         if extension == ".pdf":
-            return extraer_texto_pdf(archivo)
-
-        return extraer_texto_docx(archivo)
+            texto = extraer_texto_pdf(archivo)
+        else:
+            texto = extraer_texto_docx(archivo)
 
     except Exception as error:
         raise ErrorExtraccionCV(
             "No fue posible extraer el texto del currículum."
         ) from error
+
+    # PostgreSQL no admite NUL en campos text; el archivo original se conserva.
+    return texto.replace("\x00", "")
