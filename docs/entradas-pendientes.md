@@ -78,3 +78,85 @@ La migración `0019_entradas_pendientes` crea exclusivamente los modelos y su
 restricción de unicidad. Debe revisarse y aplicarse en cada despliegue; los permisos
 se asignan explícitamente cuando corresponda. No incluye cargas iniciales,
 documentos, datos personales ni configuración de una instancia concreta.
+
+## Importación por lotes y revisión posterior
+
+`importar_cvs carpeta manifiesto.json` sigue siendo solo previsualización; la
+escritura requiere `--importar`. No llama a OCR, servicios externos ni mensajería.
+Una fila clara conserva el formato anterior. Para recibir una excepción sin crear
+un candidato, declare `pendiente` y la clasificación de cada documento:
+
+```json
+{
+  "organizacion": "organizacion-sintetica",
+  "usuario_ejecutor": "gestor-sintetico",
+  "registros": [{
+    "id_fila": "recepcion-1",
+    "origen_importacion": "fuente-sintetica",
+    "identificador_origen": "recepcion-1",
+    "contexto_recepcion": {"asunto": "Postulación", "fecha": "fecha explícita"},
+    "pendiente": {
+      "motivo": "CV sin nombre corroborado",
+      "fuente": "Resumen de recepción y encabezado del CV, página 1",
+      "datos": {
+        "nombre": "Nombre propuesto",
+        "telefono": "123456789",
+        "telefono_estado": "no_confirmado",
+        "seguimiento": "pendiente"
+      }
+    },
+    "documentos": [{
+      "identificador_origen": "CV_001.pdf",
+      "archivo": "recepcion-1/CV_001.pdf",
+      "tipo": "curriculum"
+    }]
+  }]
+}
+```
+
+El motivo admite hasta 300 caracteres. `datos` acepta los campos revisables de la
+bandeja; recibir una fila no confirma identidad, profesión ni ubicación, incluso
+si el manifiesto las declara confirmadas. Los contactos disponibles requieren una
+fuente explícita y se rechazan correos genéricos de portales como personales.
+El nombre puede quedar vacío sin cambiar un CV a `otro`. Profesión, contacto y
+ubicación ausentes no excluyen una fila clara identificada.
+
+Un documento sin `tipo` se conserva como `otro`, con clasificación sin confirmar,
+en la bandeja protegida. Esto también ocurre con adjuntos sin clasificar dentro
+de filas claras: sus documentos clasificados siguen el flujo normal. El contexto
+puede contener `candidato_contexto_id`, validado en la misma organización: conserva
+el contexto del remitente, **no vincula el archivo ni acredita titularidad**.
+El importador conserva una referencia estable a la procedencia de la fila como
+contexto cuando separa un adjunto sin clasificar, exista ya la ficha o se cree
+después en el flujo claro. El contexto original es inmutable.
+
+Las entradas sin clasificación solo son visibles para administradores y
+supervisores de su organización (y superusuarios); no para colaboradores. Se
+admiten PDF, DOC, DOCX, PNG, JPG, JPEG y TXT de hasta 10 MB como originales
+privados. Los formatos adicionales solo se conservan para revisión, no se resuelven
+hacia documentos de candidato. Las evaluaciones explícitas y los hashes ya
+registrados como evaluación se rechazan; no se reclasifican por este flujo.
+Un archivo desconocido no se analiza automáticamente para descartar evaluaciones:
+la revisión humana es obligatoria antes de confirmar clasificación y resolver.
+
+Cada documento pendiente se recibe en una transacción independiente usando los
+servicios de la bandeja. Un error no impide conservar los otros documentos. La
+previsualización incluye un balance de todos los documentos: listos, pendientes,
+existentes y conflictos (incluidos inválidos o faltantes). La repetición de la
+misma clave organización/fuente/procedencia/clave documental y contenido no crea
+otra entrada ni revisión, ni sobrescribe una revisión manual posterior. Otro
+contenido o contexto para esa clave es un conflicto. Un mismo hash en dos
+recepciones distintas conserva ambas, sin fusionar identidades. Una fila clara
+que encuentra un archivo en bandeja debe usar la resolución segura; no la evita
+creando directamente un candidato.
+
+Desde **Revisar y completar** se descarga el original privado y se corrigen datos,
+clasificación y motivo con fuente obligatoria. Cada revisión registra usuario,
+fecha, instantánea y diferencias. Después se usa **Resolver: crear o vincular**,
+que exige identidad y clasificación confirmadas, comprueba duplicados y permisos
+y nunca rellena ni sobrescribe silenciosamente una ficha existente. El original
+no se modifica.
+
+La migración `0020_recepcion_pendiente_contexto` añade motivo y contexto de recepción
+y amplía los formatos conservables. Debe aplicarse en el despliegue antes de usar
+esta versión; no procesa lotes ni añade registros de candidatos o entradas.

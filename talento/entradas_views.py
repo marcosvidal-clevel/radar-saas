@@ -20,7 +20,9 @@ def _visibles(request):
     if request.user.is_superuser:
         return qs
     return qs.exclude(tipo_documento="evaluacion").filter(organizacion__activa=True, organizacion__membresias__usuario=request.user,
-                     organizacion__membresias__activa=True).distinct()
+                     organizacion__membresias__activa=True).filter(
+        Q(clasificacion_confirmada=True) | Q(organizacion__membresias__rol__in=["admin", "supervisor"])
+    ).distinct()
 
 
 def _context(request, **kwargs):
@@ -65,7 +67,7 @@ def editar(request, pk=None):
         else:
             messages.success(request, "Entrada conservada; no se creó ningún candidato.")
             return redirect("entrada_detalle", pk=saved.pk)
-    return render(request, "talento/entrada_form.html", _context(request, title="Revisar entrada" if entrada else "Nueva entrada pendiente", form=form))
+    return render(request, "talento/entrada_form.html", _context(request, title="Revisar y completar" if entrada else "Nueva entrada pendiente", form=form))
 
 
 @login_required

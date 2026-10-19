@@ -122,6 +122,8 @@ class ImportarCVsTests(TestCase):
         self.assertEqual(documentos[1].estado_extraccion, DocumentoCandidato.EstadoExtraccion.EXTRAIDO)
 
     def test_importa_varios_documentos_una_persona_y_deja_sin_tipo_pendiente(self):
+        from .models import EntradaPendiente
+        self.usuario.user_permissions.add(Permission.objects.get(codename="add_entradapendiente"))
         manifest = self.manifest([{
             "id_fila": "multi", "identificador_origen": "persona-1",
             "origen_importacion": "fuente-multi", "nombre": "Persona multi",
@@ -133,11 +135,11 @@ class ImportarCVsTests(TestCase):
         output = self.run_command(manifest, "--importar")
         self.assertIn("DOCUMENTOS", output)
         self.assertEqual(Candidato.objects.count(), 1)
-        self.assertEqual(DocumentoCandidato.objects.count(), 2)
-        otro = DocumentoCandidato.objects.get(identificador_origen="ant-1")
-        self.assertEqual(otro.tipo, DocumentoCandidato.Tipo.OTRO)
-        self.assertTrue(otro.pendiente_clasificacion)
-        self.assertEqual(otro.estado_extraccion, DocumentoCandidato.EstadoExtraccion.NO_APLICA)
+        self.assertEqual(DocumentoCandidato.objects.count(), 1)
+        otro = EntradaPendiente.objects.get(clave_documental="ant-1")
+        self.assertEqual(otro.tipo_documento, "otro")
+        self.assertFalse(otro.clasificacion_confirmada)
+        self.assertIsNone(otro.candidato_id)
 
     def test_reimportacion_parcial_omite_igual_y_agrega_documento_nuevo(self):
         first = self.manifest([{

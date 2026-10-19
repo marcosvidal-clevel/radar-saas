@@ -34,7 +34,7 @@ class EntradaPendiente(models.Model):
     identificador_origen = models.CharField(max_length=200)
     clave_documental = models.CharField(max_length=200)
     archivo = models.FileField(upload_to=ruta_entrada, storage=AlmacenEntradasPrivado(), validators=[
-        FileExtensionValidator(allowed_extensions=["pdf", "doc", "docx"]),
+        FileExtensionValidator(allowed_extensions=["pdf", "doc", "docx", "png", "jpg", "jpeg", "txt"]),
     ])
     nombre_archivo_original = models.CharField(max_length=255, editable=False)
     sha256 = models.CharField(max_length=64, editable=False)
@@ -58,6 +58,8 @@ class EntradaPendiente(models.Model):
     ], default="otro")
     clasificacion_confirmada = models.BooleanField(default=False)
     limitacion_lectura = models.TextField(blank=True)
+    motivo_pendiente = models.CharField(max_length=300, blank=True)
+    contexto_recepcion = models.JSONField(default=dict, blank=True, editable=False)
     informacion_por_completar = models.TextField(blank=True)
     seguimiento = models.CharField(max_length=30, choices=Seguimiento.choices, default=Seguimiento.PENDIENTE)
     candidato = models.ForeignKey("talento.Candidato", null=True, blank=True, editable=False, on_delete=models.PROTECT)

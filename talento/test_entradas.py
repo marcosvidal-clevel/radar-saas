@@ -209,7 +209,7 @@ class EntradasTests(TestCase):
         self.assertFalse(Candidato.objects.exists())
 
     def test_colaborador_consulta_no_modifica(self):
-        entry = self.entrada()
+        entry = self.entrada(tipo_documento="curriculum", clasificacion_confirmada=True)
         Membresia.objects.filter(usuario=self.user).update(rol="colaborador")
         with self.assertRaises(PermissionDenied):
             self.confirmar(entry)

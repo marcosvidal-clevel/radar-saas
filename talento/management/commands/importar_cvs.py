@@ -5,17 +5,21 @@ import json
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.core.files import File
 from django.core.files.storage import default_storage
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.db.models import Q
 
 from core.models import Membresia, Organizacion
+from talento.importacion_pendientes import inspeccionar_documento, importar_documento
 from talento.models import (
     Candidato,
     CandidatoProcedencia,
     DocumentoCandidato,
     DocumentoProcedencia,
+    EntradaPendiente,
 )
 
 
@@ -57,6 +61,14 @@ def _safe_path(root, relative):
     if not _inside(root, path):
         return None, "ruta_fuera_de_carpeta"
     return path, None
+
+
+def _document_total(row):
+    if not isinstance(row, dict):
+        return 0
+    if "documentos" in row:
+        return len(row["documentos"]) if isinstance(row["documentos"], list) else 0
+    return int(bool(row.get("archivo")))
 
 
 def _digest(path):
@@ -106,8 +118,8 @@ class Command(BaseCommand):
             raise CommandError("Organización o usuario no encontrado.") from exc
         return organization, user
 
-    def _authorize(self, organization, user):
-        if not organization.activa:
+    def _authorize(self, organization, user, *, candidates=True):
+        if not organization.activa or not user.is_active:
             raise CommandError("La organización no está activa.")
         membership = Membresia.objects.filter(
             organizacion=organization,
@@ -117,9 +129,9 @@ class Command(BaseCommand):
         ).exists()
         if not membership:
             raise CommandError("El usuario no tiene rol de gestión en la organización.")
-        if not user.has_perm("talento.add_candidato"):
+        if candidates and not user.has_perm("talento.add_candidato"):
             raise CommandError("El usuario no tiene permiso de crear candidatos.")
-        if not user.has_perm("talento.add_documentocandidato"):
+        if candidates and not user.has_perm("talento.add_documentocandidato"):
             raise CommandError("El usuario no tiene permiso de crear documentos.")
 
     def _canonical(self, candidate):
@@ -160,6 +172,70 @@ class Command(BaseCommand):
         return documents
 
     def _inspect(self, root, organization, records):
+        clear, pending = [], []
+        for position, row in enumerate(records, 1):
+            if isinstance(row, dict) and "pendiente" in row:
+                pending.append((position, row))
+                continue
+            if isinstance(row, dict):
+                documents = self._documents(row, position)
+                if documents:
+                    unknown = [d for d in documents if isinstance(d, dict) and not d.get("tipo")]
+                    if unknown:
+                        # Unclassified attachments stay in protected reception, even for known people.
+                        context = row.get("contexto_recepcion", {})
+                        if isinstance(context, dict):
+                            context = {**context, "procedencia_candidato_contexto": {
+                                "organizacion_id": organization.pk,
+                                "origen_importacion": row.get("origen_importacion", ""),
+                                "identificador_origen": row.get("identificador_origen", ""),
+                            }}
+                        pending.append((position, {**row, "documentos": unknown, "contexto_recepcion": context,
+                            "pendiente": {"motivo": "Adjunto sin clasificación; revisar antes de atribuir titularidad.",
+                                "fuente": row.get("fuente_datos") or row.get("origen_importacion", ""),
+                                "datos": {"nombre": row.get("nombre", "")}}}))
+                        row = {**row, "documentos": [d for d in documents if d not in unknown]}
+                        if not row["documentos"]:
+                            continue
+            clear.append(row)
+        report = self._inspect_claros(root, organization, clear)
+        for item, row in zip(report, clear):
+            item["input_row"] = row
+            item["root"] = root
+            item["document_total"] = _document_total(row)
+        seen_receipts = {}
+        for position, row in pending:
+            item = {"row": str(row.get("id_fila", position)), "input_row": row, "pending": True}
+            documents = self._documents(row, position)
+            item["document_total"] = _document_total(row)
+            plans = []
+            for document in documents or [{}]:
+                try:
+                    if not isinstance(document, dict) or not document.get("identificador_origen"):
+                        raise ValidationError("Falta clave documental.")
+                    path, error = _safe_path(root, document.get("archivo"))
+                    if error or path is None or not path.is_file():
+                        raise ValidationError(error or "archivo_ausente")
+                    plan = inspeccionar_documento(path=path, row=row, document=document,
+                        usuario=self.pending_user, organizacion=organization)
+                    key = (row.get("origen_importacion"), row.get("identificador_origen"), document["identificador_origen"])
+                    signature = (plan["sha256"], plan["datos"]["contexto_recepcion"])
+                    if key in seen_receipts:
+                        if seen_receipts[key] != signature:
+                            raise ValidationError("Conflicto de recepción repetida en el manifiesto.")
+                        plan["status"] = "duplicado"
+                    else:
+                        seen_receipts[key] = signature
+                except (ValidationError, OSError, ValueError, TypeError) as exc:
+                    plan = {"status": "conflicto", "error": str(exc)}
+                plans.append(plan)
+            item.update(document_plans=plans, document_statuses=[p["status"] for p in plans])
+            item["error"] = "; ".join(p["error"] for p in plans if "error" in p)
+            item["status"] = "pendiente" if any(p["status"] == "entrada_pendiente" for p in plans) else "duplicado" if all(p["status"] == "duplicado" for p in plans) else "conflicto"
+            report.append(item)
+        return report
+
+    def _inspect_claros(self, root, organization, records):
         seen_hashes = {}
         self.uncheckable_duplicates = DocumentoCandidato.objects.filter(
             candidato__organizacion=organization,
@@ -218,6 +294,17 @@ class Command(BaseCommand):
                     plans.append({"status": "invalido", "error": "tipo_no_admitido"})
                     continue
                 digest = _digest(path)
+                if DocumentoCandidato.objects.filter(candidato__organizacion=organization,
+                        sha256=digest, tipo=DocumentoCandidato.Tipo.EVALUACION).exists():
+                    plans.append({"status": "rechazado", "error": "evaluacion_restringida"})
+                    continue
+                if EntradaPendiente.objects.filter(organizacion=organization).filter(
+                    Q(sha256=digest)
+                    | Q(origen_importacion=row["origen_importacion"],
+                        identificador_origen=row["identificador_origen"], clave_documental=document_row["identificador_origen"])
+                ).exists():
+                    plans.append({"status": "invalido", "error": "recepcion_pendiente_requiere_resolucion"})
+                    continue
                 plans.append({"status": "valido", "path": path, "sha256": digest, "row": document_row,
                               "clasificacion_pendiente": "tipo" not in document_row or not document_row.get("tipo")})
             if any(plan["status"] != "valido" for plan in plans):
@@ -251,7 +338,7 @@ class Command(BaseCommand):
                     origen_importacion=row["origen_importacion"],
                     identificador_origen=row["identificador_origen"],
                 ).first() if candidate and drow["identificador_origen"] == row["identificador_origen"] else None
-                if current and current.sha256 == digest:
+                if current and current.sha256 == digest and current.tipo == plan["row"].get("tipo"):
                     statuses.append("duplicado")
                 elif current:
                     statuses.append("pendiente_revision")
@@ -266,8 +353,10 @@ class Command(BaseCommand):
                         if candidate and self._canonical(owner).pk == candidate.pk:
                             same_candidate_hash = True
                             plan["existing_document"] = DocumentoCandidato.objects.filter(
-                                candidato_id=owner_id, sha256=digest
+                                candidato_id=owner_id, sha256=digest, tipo=plan["row"].get("tipo")
                             ).first()
+                            if plan["existing_document"] is None:
+                                same_candidate_hash = False
                             break
                     if same_candidate_hash:
                         statuses.append("duplicado")
@@ -299,6 +388,21 @@ class Command(BaseCommand):
         saved_names = []
         try:
             with transaction.atomic():
+                Organizacion.objects.select_for_update().get(pk=organization.pk)
+                for plan in item["document_plans"]:
+                    if _digest(plan["path"]) != plan["sha256"]:
+                        raise CommandError("Archivo cambiado después de la previsualización.")
+                if "root" in item:
+                    fresh = self._inspect_claros(item["root"], organization, [row])[0]
+                    if fresh["status"] not in {"valido", "duplicado"}:
+                        raise CommandError("La previsualización cambió; fila detenida.")
+                    item = fresh
+                # Recheck hash ownership under the same organization lock used by the inbox.
+                for plan in item["document_plans"]:
+                    if _digest(plan["path"]) != plan["sha256"]:
+                        raise CommandError("Archivo cambiado después de la previsualización.")
+                    if EntradaPendiente.objects.filter(organizacion=organization, sha256=plan["sha256"]).exists():
+                        raise CommandError("El archivo requiere resolución en bandeja.")
                 candidate = self._existing_candidate(organization, row)
                 if candidate:
                     pass
@@ -310,6 +414,7 @@ class Command(BaseCommand):
                     identificador_origen=row["identificador_origen"],
                     defaults={"candidato": candidate},
                 )
+                row_provenance.full_clean()
                 for plan, status in zip(item["document_plans"], item["document_statuses"]):
                     if status == "duplicado" and plan.get("existing_document"):
                         DocumentoProcedencia.objects.get_or_create(
@@ -342,6 +447,8 @@ class Command(BaseCommand):
                         procedencia=row_provenance,
                         identificador_origen=drow["identificador_origen"],
                     )
+                for link in DocumentoProcedencia.objects.filter(procedencia=row_provenance):
+                    link.full_clean()
         except Exception:
             for saved_name in saved_names:
                 default_storage.delete(saved_name)
@@ -353,7 +460,9 @@ class Command(BaseCommand):
             raise CommandError("La carpeta no es válida o es un enlace simbólico.")
         data = self._load_manifest(root, options["manifiesto"])
         organization, user = self._organization_and_user(data)
-        self._authorize(organization, user)
+        records = data["registros"]
+        self.pending_user = user
+        self._authorize(organization, user, candidates=any(not isinstance(r, dict) or "pendiente" not in r for r in records))
         report = self._inspect(root, organization, data["registros"])
         counts = {}
         document_counts = {}
@@ -366,6 +475,12 @@ class Command(BaseCommand):
         self.stdout.write("RESUMEN " + " ".join(f"{key}={counts[key]}" for key in sorted(counts)))
         if document_counts:
             self.stdout.write("DOCUMENTOS " + " ".join(f"{key}={document_counts[key]}" for key in sorted(document_counts)))
+        total = sum(item["document_total"] for item in report)
+        pending_count = document_counts.get("entrada_pendiente", 0)
+        ready = sum(item.get("document_statuses", []).count("documento_nuevo")
+                    for item in report if item["status"] == "valido")
+        existing = document_counts.get("duplicado", 0)
+        self.stdout.write(f"BALANCE_DOCUMENTOS total={total} listos={ready} pendientes={pending_count} existentes={existing} conflictos={total-ready-pending_count-existing}")
         if self.uncheckable_duplicates:
             self.stdout.write(
                 "ADVERTENCIA duplicacion_no_comprobable="
@@ -379,7 +494,22 @@ class Command(BaseCommand):
             return
         imported = 0
         errors = 0
-        for row, item in zip(data["registros"], report):
+        pending_created = 0
+        for item in report:
+            row = item["input_row"]
+            if item.get("pending"):
+                for plan in item["document_plans"]:
+                    if plan["status"] != "entrada_pendiente":
+                        continue
+                    try:
+                        _, created = importar_documento(plan, user, organization)
+                        pending_created += int(created)
+                    except Exception:
+                        errors += 1
+                        self.stdout.write(f"FILA {item['row']} DOCUMENTO {plan['row']['identificador_origen']} ESTADO error_recepcion")
+                continue
+            if item["status"] not in {"valido", "duplicado"}:
+                continue
             if not any(status in {"documento_nuevo", "pendiente_clasificacion"} for status in item.get("document_statuses", [])):
                 continue
             try:
@@ -389,3 +519,4 @@ class Command(BaseCommand):
                 errors += 1
                 self.stdout.write(f"FILA {item['row']} ESTADO error_importacion")
         self.stdout.write(f"IMPORTADOS {imported} ERRORES {errors}")
+        self.stdout.write(f"ENTRADAS_CREADAS {pending_created}")

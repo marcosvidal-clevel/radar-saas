@@ -17,7 +17,7 @@ CAMPOS = (
     "nombre", "identidad_estado", "profesion", "profesion_estado", "region", "ciudad",
     "ubicacion_estado", "telefono", "telefono_estado", "email", "email_estado",
     "correo_remitente", "tipo_documento", "clasificacion_confirmada", "limitacion_lectura",
-    "informacion_por_completar", "seguimiento",
+    "informacion_por_completar", "seguimiento", "motivo_pendiente",
 )
 ORIGEN = ("origen_importacion", "identificador_origen", "clave_documental")
 
@@ -46,9 +46,15 @@ def auditar(entrada, usuario, fuente, accion):
     if not fuente or not fuente.strip():
         raise ValidationError("Indique la fuente de esta revisión o confirmación.")
     datos = {f: getattr(entrada, f) for f in CAMPOS + ORIGEN}
-    datos.update(sha256=entrada.sha256, archivo=entrada.archivo.name,
+    datos.update(contexto_recepcion=entrada.contexto_recepcion, sha256=entrada.sha256, archivo=entrada.archivo.name,
                  candidato_id=entrada.candidato_id, documento_id=entrada.documento_id)
-    RevisionEntrada.objects.create(entrada=entrada, usuario=usuario, fuente=fuente.strip(), accion=accion, datos=datos)
+    anterior = entrada.revisiones.order_by("-pk").first()
+    cambios = {k: {"antes": anterior.datos.get(k), "despues": v}
+               for k, v in datos.items() if anterior and anterior.datos.get(k) != v}
+    datos["cambios"] = cambios
+    revision = RevisionEntrada(entrada=entrada, usuario=usuario, fuente=fuente.strip(), accion=accion, datos=datos)
+    revision.full_clean()
+    revision.save()
 
 
 def guardar_entrada(*, usuario, organizacion, datos, fuente, archivo=None, entrada_id=None):
@@ -63,10 +69,14 @@ def guardar_entrada(*, usuario, organizacion, datos, fuente, archivo=None, entra
                 raise ValidationError("Indique la fuente de la revisión.")
             if entrada_id:
                 entrada = EntradaPendiente.objects.select_for_update().get(pk=entrada_id, organizacion=org)
+                if entrada.tipo_documento == "evaluacion":
+                    raise ValidationError("Las evaluaciones requieren su flujo restringido.")
                 if entrada.seguimiento == "resuelto":
                     raise ValidationError("La entrada resuelta conserva su historial y no se puede editar.")
                 if archivo or any(f in datos and datos[f] != getattr(entrada, f) for f in ORIGEN):
                     raise ValidationError("Archivo y procedencia originales son inmutables.")
+                if "contexto_recepcion" in datos and datos["contexto_recepcion"] != entrada.contexto_recepcion:
+                    raise ValidationError("El contexto de recepción original es inmutable.")
             else:
                 if archivo is None:
                     raise ValidationError("Se requiere conservar el archivo original.")
@@ -76,6 +86,9 @@ def guardar_entrada(*, usuario, organizacion, datos, fuente, archivo=None, entra
                 entrada.archivo = archivo
                 entrada.nombre_archivo_original = Path(archivo.name).name
                 entrada.sha256 = huella(archivo)
+                entrada.contexto_recepcion = datos.get("contexto_recepcion", {})
+            validar_contexto(entrada.contexto_recepcion, org)
+            rechazar_evaluacion(org, entrada.sha256)
             for f in CAMPOS:
                 if f in datos:
                     setattr(entrada, f, datos[f])
@@ -94,6 +107,58 @@ def guardar_entrada(*, usuario, organizacion, datos, fuente, archivo=None, entra
         if saved_name:
             storage.delete(saved_name)
         raise
+
+
+def validar_contexto(contexto, organizacion):
+    if not isinstance(contexto, dict):
+        raise ValidationError("El contexto de recepción debe ser un objeto.")
+    candidato_id = contexto.get("candidato_contexto_id")
+    if candidato_id is not None:
+        if not isinstance(candidato_id, int) or isinstance(candidato_id, bool) or not Candidato.objects.filter(pk=candidato_id, organizacion=organizacion).exists():
+            raise ValidationError("Candidato de contexto ajeno o inexistente.")
+
+
+def rechazar_evaluacion(organizacion, sha256):
+    if DocumentoCandidato.objects.filter(candidato__organizacion=organizacion,
+            sha256=sha256, tipo=DocumentoCandidato.Tipo.EVALUACION).exists():
+        raise ValidationError("Archivo de evaluación: requiere el flujo restringido.")
+
+
+def inspeccionar_recepcion(*, usuario, organizacion, datos, fuente, archivo):
+    """Valida sin escribir; la clave de recepción, nunca el hash, da idempotencia."""
+    autorizar(usuario, organizacion, "talento.add_entradapendiente")
+    if not isinstance(fuente, str) or not fuente.strip():
+        raise ValidationError("Indique la fuente de la recepción.")
+    if datos.get("tipo_documento") == "evaluacion":
+        raise ValidationError("Las evaluaciones requieren su flujo restringido.")
+    digest = huella(archivo)
+    rechazar_evaluacion(organizacion, digest)
+    validar_contexto(datos.get("contexto_recepcion", {}), organizacion)
+    actual = EntradaPendiente.objects.filter(organizacion=organizacion,
+        **{k: datos.get(k, "") for k in ORIGEN}).first()
+    if actual:
+        if actual.sha256 != digest or actual.contexto_recepcion != datos.get("contexto_recepcion", {}):
+            raise ValidationError("Conflicto: recepción existente con otro archivo o contexto.")
+        with actual.archivo.open("rb") as original:
+            if huella(original) != digest:
+                raise ValidationError("Conflicto: archivo conservado alterado.")
+        return actual
+    entrada = EntradaPendiente(organizacion=organizacion, creado_por=usuario, actualizado_por=usuario,
+        archivo=archivo, nombre_archivo_original=Path(archivo.name).name, sha256=digest,
+        contexto_recepcion=datos.get("contexto_recepcion", {}),
+        **{k: v for k, v in datos.items() if k in CAMPOS + ORIGEN})
+    entrada.full_clean()
+    return None
+
+
+def recibir_entrada(*, usuario, organizacion, datos, fuente, archivo):
+    """Conserva cada recepción una sola vez sin alterar revisiones posteriores."""
+    with transaction.atomic():
+        org = Organizacion.objects.select_for_update().get(pk=organizacion.pk)
+        actual = inspeccionar_recepcion(usuario=usuario, organizacion=org, datos=datos, fuente=fuente, archivo=archivo)
+        if actual:
+            return actual, False
+        return guardar_entrada(usuario=usuario, organizacion=org, datos=datos, fuente=fuente, archivo=archivo), True
 
 
 def resolver_entrada(*, entrada_id, usuario, fuente, candidato_id=None):
@@ -119,6 +184,8 @@ def resolver_entrada(*, entrada_id, usuario, fuente, candidato_id=None):
                 raise ValidationError("Confirme explícitamente la identidad antes de resolver.")
             if not entrada.clasificacion_confirmada:
                 raise ValidationError("Confirme la clasificación del archivo antes de resolver.")
+            if Path(entrada.nombre_archivo_original).suffix.lower() not in {".pdf", ".doc", ".docx"}:
+                raise ValidationError("Formato conservado solo para revisión protegida; no admite resolución documental.")
             with entrada.archivo.open("rb") as original:
                 if huella(original) != entrada.sha256:
                     raise ValidationError("El archivo no coincide con su SHA-256 original.")
