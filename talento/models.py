@@ -19,6 +19,11 @@ class Candidato(models.Model):
         CONTRATADO = "contratado", "Contratado"
         NO_DISPONIBLE = "no_disponible", "No disponible"
 
+    class RevisionDocumental(models.TextChoices):
+        PENDIENTE = "pendiente", "Pendiente de revisión"
+        APROBADO = "aprobado", "Aprobado"
+        RECHAZADO = "rechazado", "Rechazado"
+
     class Fuente(models.TextChoices):
         WEB = "web", "Página web"
         LINKEDIN = "linkedin", "LinkedIn"
@@ -73,6 +78,11 @@ class Candidato(models.Model):
     )
 
     notas = models.TextField(blank=True)
+    revision_documental = models.CharField(
+        max_length=20, choices=RevisionDocumental.choices,
+        default=RevisionDocumental.PENDIENTE, db_index=True,
+    )
+    observaciones_revision = models.TextField(blank=True)
     activo = models.BooleanField(default=True)
     es_prueba = models.BooleanField(
         default=False,
