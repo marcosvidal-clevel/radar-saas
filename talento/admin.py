@@ -35,6 +35,7 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
         "es_prueba",
         "origen_importacion",
         "revision_antecedentes",
+        "revision_documental",
     )
 
     list_filter = (
@@ -43,6 +44,7 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
         "activo",
         "region",
         "origen_importacion",
+        "revision_documental",
         ("consolidado_en", admin.RelatedOnlyFieldListFilter),
     )
 
@@ -163,6 +165,8 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
                     "fuente",
                     "estado",
                     "notas",
+                    "revision_documental",
+                    "observaciones_revision",
                     "origen_importacion",
                     "identificador_origen",
                     "activo",
