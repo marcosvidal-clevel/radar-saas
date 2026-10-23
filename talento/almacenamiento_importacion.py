@@ -23,7 +23,10 @@ def guardar_adjuntos_importados(*, candidato, adjuntos, origen):
             contenido = adjunto.get("contenido")
             if not isinstance(contenido, bytes) or not contenido:
                 raise ValueError("Adjunto sin contenido binario.")
-            usar_documento = Path(nombre).suffix.lower() in EXTENSIONES and len(contenido) <= MAX_BYTES
+            tipo = clasificar_adjunto(nombre, adjunto.get("texto") or "")
+            usar_documento = (tipo in {"curriculum", "titulo"}
+                             and Path(nombre).suffix.lower() in EXTENSIONES
+                             and len(contenido) <= MAX_BYTES)
             modelo = DocumentoCandidato if usar_documento else AdjuntoImportado
             existente = modelo.objects.filter(
                 candidato=candidato, origen_importacion=str(origen),
@@ -32,7 +35,6 @@ def guardar_adjuntos_importados(*, candidato, adjuntos, origen):
             if existente:
                 registro.update(estado="existente", documento_id=existente.pk)
             else:
-                tipo = clasificar_adjunto(nombre, adjunto.get("texto") or "")
                 campos = dict(
                     candidato=candidato, nombre=nombre[:200 if usar_documento else 255],
                     tipo=tipo if usar_documento else "otro",
