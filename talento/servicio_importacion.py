@@ -3,9 +3,6 @@
 La entrada ya debe contener datos extraídos por un lector autorizado. No interpreta
 adjuntos ni ejecuta llamadas externas. Se requiere organización explícita.
 """
-import hashlib
-import json
-
 from django.db import transaction
 
 from .clasificacion_importacion import observaciones_minimas
