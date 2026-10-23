@@ -9,6 +9,7 @@ on:
 jobs:
   django-navegador:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:17
@@ -42,7 +43,7 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install -r requirements-dev.txt
       - name: Instalar Chromium compatible
-        run: python -m playwright install --with-deps chromium
+        run: python -m playwright install chromium
       - name: Revisar Django y migraciones
         run: |
           python manage.py check
