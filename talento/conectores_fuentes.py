@@ -98,19 +98,21 @@ def importar_drive_api(*, organizacion, servicio, carpeta_id, limite=100):
         archivos = respuesta.get("files") or []
         for archivo in archivos:
             try:
-                if archivo.get("mimeType", "").startswith("application/vnd.google-apps."):
-                    resultados.append({
-                        "estado": "pendiente", "archivo_id": archivo["id"],
-                        "observacion": "Documento nativo requiere exportación",
-                    })
+                tipo_mime = archivo.get("mimeType", "")
+                if tipo_mime.startswith("application/vnd.google-apps."):
+                    contenido = servicio.files().export(
+                        fileId=archivo["id"], mimeType="application/pdf"
+                    ).execute()
+                    archivo_local = {**archivo, "name": (archivo.get("name") or "documento") + ".pdf", "contenido": contenido}
                 else:
                     contenido = servicio.files().get_media(
                         fileId=archivo["id"]
                     ).execute()
-                    resultados.extend(importar_carpeta_drive(
-                        organizacion=organizacion, carpeta_id=carpeta_id,
-                        archivos=[{**archivo, "contenido": contenido}],
-                    ))
+                    archivo_local = {**archivo, "contenido": contenido}
+                resultados.extend(importar_carpeta_drive(
+                    organizacion=organizacion, carpeta_id=carpeta_id,
+                    archivos=[archivo_local],
+                ))
             except Exception as exc:
                 resultados.append({
                     "estado": "error", "archivo_id": archivo.get("id"),
