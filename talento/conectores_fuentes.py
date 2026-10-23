@@ -123,6 +123,8 @@ def importar_gmail_api(*, organizacion, servicio, consulta="has:attachment", lim
 
 def importar_drive_api(*, organizacion, servicio, carpeta_id, limite=100):
     """Lee archivos de Drive v3 sin modificar los originales."""
+    if not isinstance(carpeta_id, str) or not carpeta_id.strip() or any(c in carpeta_id for c in ("'", "\n", "\r")):
+        raise ValueError("Identificador de carpeta de Drive no válido.")
     if limite <= 0:
         return []
     resultados = []
