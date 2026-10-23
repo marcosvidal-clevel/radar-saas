@@ -104,6 +104,8 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
     readonly_fields = (
         "creado_en",
         "actualizado_en",
+        "origen_importacion",
+        "identificador_origen",
     )
 
     list_select_related = ("organizacion",)
