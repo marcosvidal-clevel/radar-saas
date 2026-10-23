@@ -1,0 +1,52 @@
+name: Validacion integral RADAR Ubuntu 24.04
+on:
+  push:
+    branches:
+      - feature/importacion-candidatos-sin-bloqueos
+  pull_request:
+    branches:
+      - main
+jobs:
+  django-navegador:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: radar_ci_control
+          POSTGRES_USER: radar_ci
+          POSTGRES_PASSWORD: radar_ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U radar_ci -d radar_ci_control"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DJANGO_SETTINGS_MODULE: config.settings_test
+      RADAR_TEST_DB_NAME: radar_ci_control
+      RADAR_TEST_DB_USER: radar_ci
+      RADAR_TEST_DB_PASSWORD: radar_ci_password
+      RADAR_TEST_DB_HOST: 127.0.0.1
+      RADAR_TEST_DB_PORT: "5432"
+      RADAR_TEST_DB_SSLMODE: disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Instalar dependencias
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-dev.txt
+      - name: Instalar Chromium compatible
+        run: python -m playwright install chromium
+      - name: Revisar Django y migraciones
+        run: |
+          python manage.py check
+          python manage.py makemigrations --check --dry-run
+      - name: Ejecutar suite completa
+        run: python manage.py test config core talento integraciones_google --verbosity 1

@@ -2,6 +2,7 @@
 import re
 
 from django.contrib import admin
+from django import forms
 from django.core.exceptions import PermissionDenied
 from django.utils.html import format_html
 from django.urls import reverse
@@ -18,12 +19,33 @@ from .models import (
 )
 
 
+class RevisionCandidatoForm(forms.ModelForm):
+    class Meta:
+        model = Candidato
+        fields = "__all__"
+
+    def clean(self):
+        cleaned = super().clean()
+        if (
+            cleaned.get("revision_documental") == Candidato.RevisionDocumental.RECHAZADO
+            and not (cleaned.get("observaciones_revision") or "").strip()
+        ):
+            self.add_error(
+                "observaciones_revision",
+                "Indique el motivo del rechazo documental.",
+            )
+        return cleaned
+
+
 @admin.register(Candidato)
 class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
+    form = RevisionCandidatoForm
 
     list_display = (
         "nombre",
         "organizacion",
+        "rut",
+        "email",
         "profesion",
         "especialidad",
         "region",
@@ -31,6 +53,9 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
         "fuente",
         "activo",
         "es_prueba",
+        "origen_importacion",
+        "revision_antecedentes",
+        "revision_documental",
     )
 
     list_filter = (
@@ -38,10 +63,14 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
         "fuente",
         "activo",
         "region",
+        "origen_importacion",
+        "revision_documental",
+        ("consolidado_en", admin.RelatedOnlyFieldListFilter),
     )
 
     search_fields = (
         "nombre",
+        "rut",
         "email",
         "telefono",
         "profesion",
@@ -49,6 +78,37 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
         "competencias",
         "experiencia",
     )
+
+    @admin.display(description="Revisión de antecedentes")
+    def revision_antecedentes(self, obj):
+        documentos = obj.documentos.filter(vigente=True)
+        cv = documentos.filter(tipo=DocumentoCandidato.Tipo.CURRICULUM).exists()
+        titulo = documentos.filter(tipo=DocumentoCandidato.Tipo.TITULO).exists()
+        faltantes = []
+        if not obj.rut:
+            faltantes.append("RUT")
+        if not cv:
+            faltantes.append("CV")
+        if not titulo:
+            faltantes.append("título")
+        return "Completo" if not faltantes else "Por revisar: " + ", ".join(faltantes)
+
+    def get_actions(self, request):
+        acciones = super().get_actions(request)
+        if not self.has_change_permission(request):
+            acciones.pop("marcar_revision_pendiente", None)
+        return acciones
+
+    @admin.action(description="Marcar revisión documental como pendiente")
+    def marcar_revision_pendiente(self, request, queryset):
+        if not self.has_change_permission(request):
+            raise PermissionDenied
+        actualizados = queryset.filter(
+            pk__in=self.get_queryset(request).values("pk")
+        ).update(revision_documental=Candidato.RevisionDocumental.PENDIENTE)
+        self.message_user(request, f"{actualizados} candidatos pendientes de revisión.")
+
+    actions = ("marcar_revision_pendiente",)
 
     def get_search_results(self, request, queryset, search_term):
         resultados_normales, use_distinct = (
@@ -99,6 +159,8 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
     readonly_fields = (
         "creado_en",
         "actualizado_en",
+        "origen_importacion",
+        "identificador_origen",
     )
 
     list_select_related = ("organizacion",)
@@ -110,6 +172,8 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
                 "fields": (
                     "organizacion",
                     "nombre",
+                    "rut",
+                    "direccion",
                     "email",
                     "telefono",
                     "linkedin",
@@ -138,6 +202,10 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
                     "fuente",
                     "estado",
                     "notas",
+                    "revision_documental",
+                    "observaciones_revision",
+                    "origen_importacion",
+                    "identificador_origen",
                     "activo",
                     "es_prueba",
                 )

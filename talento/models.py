@@ -19,6 +19,11 @@ class Candidato(models.Model):
         CONTRATADO = "contratado", "Contratado"
         NO_DISPONIBLE = "no_disponible", "No disponible"
 
+    class RevisionDocumental(models.TextChoices):
+        PENDIENTE = "pendiente", "Pendiente de revisión"
+        APROBADO = "aprobado", "Aprobado"
+        RECHAZADO = "rechazado", "Rechazado"
+
     class Fuente(models.TextChoices):
         WEB = "web", "Página web"
         LINKEDIN = "linkedin", "LinkedIn"
@@ -34,6 +39,8 @@ class Candidato(models.Model):
     )
 
     nombre = models.CharField(max_length=200)
+    rut = models.CharField(max_length=16, blank=True, db_index=True)
+    direccion = models.CharField(max_length=250, blank=True)
     email = models.EmailField(blank=True)
     telefono = models.CharField(max_length=50, blank=True)
     linkedin = models.URLField(blank=True)
@@ -71,6 +78,11 @@ class Candidato(models.Model):
     )
 
     notas = models.TextField(blank=True)
+    revision_documental = models.CharField(
+        max_length=20, choices=RevisionDocumental.choices,
+        default=RevisionDocumental.PENDIENTE, db_index=True,
+    )
+    observaciones_revision = models.TextField(blank=True)
     activo = models.BooleanField(default=True)
     es_prueba = models.BooleanField(
         default=False,
@@ -690,3 +702,34 @@ class Entrevista(models.Model):
 
 # Modelos separados para entradas sin una persona confirmada.
 from .entradas_models import EntradaPendiente, RevisionEntrada  # noqa: E402,F401
+
+
+def ruta_adjunto_importado(instancia, nombre):
+    """Ruta aislada por organización y candidato, sin confiar en la ruta de origen."""
+    extension = Path(nombre).suffix.lower()[:15]
+    return (
+        f"importaciones/{instancia.candidato.organizacion_id}/"
+        f"{instancia.candidato_id}/{uuid.uuid4().hex}{extension}"
+    )
+
+
+class AdjuntoImportado(models.Model):
+    """Conserva adjuntos no admitidos por DocumentoCandidato sin descartarlos."""
+
+    candidato = models.ForeignKey(
+        Candidato, on_delete=models.CASCADE, related_name="otros_adjuntos_importados"
+    )
+    nombre = models.CharField(max_length=255)
+    archivo = models.FileField(upload_to=ruta_adjunto_importado)
+    origen_importacion = models.CharField(max_length=100)
+    identificador_origen = models.CharField(max_length=200)
+    tipo = models.CharField(max_length=30, default="otro")
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("candidato", "origen_importacion", "identificador_origen"),
+                name="adjunto_importado_origen_unico",
+            )
+        ]
