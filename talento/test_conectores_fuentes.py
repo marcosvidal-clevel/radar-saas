@@ -61,6 +61,40 @@ class ConectoresFuentesTests(SimpleTestCase):
         self.assertEqual(archivo["name"], "CV Ana.pdf")
         self.assertEqual(archivo["contenido"], b"%PDF-test")
 
+    def test_limite_cero_no_consulta_fuentes(self):
+        servicio = MagicMock()
+        self.assertEqual(
+            importar_gmail_api(organizacion=object(), servicio=servicio, limite=0), []
+        )
+        self.assertEqual(
+            importar_drive_api(
+                organizacion=object(), servicio=servicio,
+                carpeta_id="carpeta", limite=0
+            ), []
+        )
+        servicio.users.assert_not_called()
+        servicio.files.assert_not_called()
+
+    def test_drive_continua_si_falla_exportacion_de_documento_nativo(self):
+        servicio = MagicMock()
+        servicio.files.return_value.list.return_value.execute.return_value = {
+            "files": [
+                {"id": "fallido", "name": "doc roto", "mimeType": "application/vnd.google-apps.document"},
+                {"id": "correcto", "name": "archivo.pdf", "mimeType": "application/pdf"},
+            ]
+        }
+        servicio.files.return_value.export.return_value.execute.side_effect = RuntimeError("exportación fallida")
+        servicio.files.return_value.get_media.return_value.execute.return_value = b"contenido"
+        with patch("talento.conectores_fuentes.importar_carpeta_drive",
+                   return_value=[{"candidato_id": 12}]) as importar:
+            resultado = importar_drive_api(
+                organizacion=object(), servicio=servicio,
+                carpeta_id="carpeta", limite=10
+            )
+        self.assertEqual(resultado[0]["estado"], "error")
+        self.assertEqual(resultado[1], {"candidato_id": 12})
+        importar.assert_called_once()
+
     def test_drive_continua_si_un_archivo_falla(self):
         servicio = MagicMock()
         servicio.files.return_value.list.return_value.execute.return_value = {
