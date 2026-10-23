@@ -6,7 +6,6 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.http import HttpResponseBadRequest
 from django.shortcuts import redirect
-from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 
 from core.models import Membresia, Organizacion
@@ -80,11 +79,12 @@ def callback_oauth(request):
             "Google no entregó refresh token. Revoca el acceso anterior y vuelve a autorizar."
         )
 
+    # Gmail users.getProfile identifica la cuenta sin solicitar scopes de perfil extra.
     from googleapiclient.discovery import build
-    servicio = build("oauth2", "v2", credentials=credentials, cache_discovery=False)
-    perfil = servicio.userinfo().get().execute()
-    email = (perfil.get("email") or "").strip().lower()
-    if not perfil.get("verified_email") or not cuenta_permitida(email):
+    servicio_gmail = build("gmail", "v1", credentials=credentials, cache_discovery=False)
+    perfil = servicio_gmail.users().getProfile(userId="me").execute()
+    email = (perfil.get("emailAddress") or "").strip().lower()
+    if not cuenta_permitida(email):
         raise PermissionDenied("La cuenta Google no está verificada o no está autorizada.")
 
     datos_token = {
@@ -133,8 +133,24 @@ def desconectar(request, organizacion_id, conexion_id):
     if not conexion:
         from django.http import Http404
         raise Http404("Conexión no encontrada.")
-    # Se destruye el token local. La revocación remota se puede reintentar
-    # sin conservar credenciales: Google permite revocar el grant desde la cuenta.
+    # Revocar el grant remoto antes de destruir la copia local.
+    # Si falla la llamada remota, el token local se elimina igualmente.
+    try:
+        from google.auth.transport.requests import Request
+        from google.oauth2.credentials import Credentials
+        from talento.oauth_google import descifrar_token
+        datos = json.loads(descifrar_token(conexion.token_cifrado))
+        credenciales = Credentials(
+            token=datos.get("token"),
+            refresh_token=datos.get("refresh_token"),
+            token_uri=datos.get("token_uri"),
+            client_id=datos.get("client_id"),
+            client_secret=datos.get("client_secret"),
+            scopes=datos.get("scopes") or SCOPES,
+        )
+        credenciales.revoke(Request())
+    except Exception:
+        logger.warning("No se pudo confirmar revocación remota para organización %s", organizacion.pk)
     conexion.token_cifrado = ""
     conexion.activa = False
     conexion.save(update_fields=("token_cifrado", "activa", "actualizada_en"))
