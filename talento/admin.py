@@ -34,6 +34,7 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
         "activo",
         "es_prueba",
         "origen_importacion",
+        "revision_antecedentes",
     )
 
     list_filter = (
@@ -54,6 +55,20 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
         "competencias",
         "experiencia",
     )
+
+    @admin.display(description="Revisión de antecedentes")
+    def revision_antecedentes(self, obj):
+        documentos = obj.documentos.filter(vigente=True)
+        cv = documentos.filter(tipo=DocumentoCandidato.Tipo.CURRICULUM).exists()
+        titulo = documentos.filter(tipo=DocumentoCandidato.Tipo.TITULO).exists()
+        faltantes = []
+        if not obj.rut:
+            faltantes.append("RUT")
+        if not cv:
+            faltantes.append("CV")
+        if not titulo:
+            faltantes.append("título")
+        return "Completo" if not faltantes else "Por revisar: " + ", ".join(faltantes)
 
     def get_search_results(self, request, queryset, search_term):
         resultados_normales, use_distinct = (
