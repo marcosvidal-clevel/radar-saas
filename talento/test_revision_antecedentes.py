@@ -39,6 +39,22 @@ class RevisionAntecedentesTests(TestCase):
             self.admin.revision_antecedentes(self.candidato), "Completo"
         )
 
+    def test_titulo_no_vigente_no_completa_antecedentes(self):
+        self.candidato.rut = "12345678-5"
+        self.candidato.save(update_fields=["rut"])
+        self.candidato.documentos.create(
+            nombre="CV vigente", tipo=DocumentoCandidato.Tipo.CURRICULUM,
+            vigente=True,
+        )
+        self.candidato.documentos.create(
+            nombre="Título antiguo", tipo=DocumentoCandidato.Tipo.TITULO,
+            vigente=False,
+        )
+        self.assertEqual(
+            self.admin.revision_antecedentes(self.candidato),
+            "Por revisar: título",
+        )
+
     def test_documento_no_vigente_no_acredita_cv(self):
         self.candidato.documentos.create(
             nombre="CV antiguo", tipo=DocumentoCandidato.Tipo.CURRICULUM,
