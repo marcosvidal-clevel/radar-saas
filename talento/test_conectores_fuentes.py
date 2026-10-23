@@ -31,6 +31,32 @@ class ConectoresFuentesTests(SimpleTestCase):
         importar.assert_called_once()
         self.assertEqual(resultado[1]["candidato_id"], 7)
 
+    def test_gmail_conserva_adjunto_embebido_sin_attachment_id(self):
+        import base64
+        servicio = MagicMock()
+        servicio.users.return_value.messages.return_value.list.return_value.execute.return_value = {
+            "messages": [{"id": "correo-1"}]
+        }
+        dato = base64.urlsafe_b64encode(b"%PDF-embebido").decode().rstrip("=")
+        servicio.users.return_value.messages.return_value.get.return_value.execute.return_value = {
+            "id": "correo-1",
+            "payload": {
+                "headers": [{"name": "Subject", "value": "Postulacion"}],
+                "parts": [{"filename": "CV Ana.pdf", "partId": "parte-1",
+                           "body": {"data": dato}, "mimeType": "application/pdf"}],
+            },
+        }
+        with patch("talento.conectores_fuentes.importar_mensaje",
+                   return_value={"candidato_id": 15}) as importar:
+            resultado = importar_gmail_api(
+                organizacion=object(), servicio=servicio, limite=1
+            )
+        self.assertEqual(resultado, [{"candidato_id": 15}])
+        adjunto = importar.call_args.kwargs["mensaje"]["adjuntos"][0]
+        self.assertEqual(adjunto["nombre"], "CV Ana.pdf")
+        self.assertEqual(adjunto["contenido"], b"%PDF-embebido")
+        servicio.users.return_value.messages.return_value.attachments.assert_not_called()
+
     def test_gmail_extrae_texto_de_html_si_no_hay_texto_plano(self):
         import base64
         html = "<html><head><title>oculto</title></head><body><p>Nombre: Ana</p><script>alert(1)</script><p>RUT: 123</p></body></html>"
