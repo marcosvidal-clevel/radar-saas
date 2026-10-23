@@ -12,9 +12,14 @@ class ConectoresFuentesTests(SimpleTestCase):
         servicio.users.return_value.messages.return_value.list.return_value.execute.return_value = {
             "messages": [{"id": "fallido"}, {"id": "correcto"}]
         }
+        correcto = MagicMock()
+        correcto.execute.return_value = {
+            "id": "correcto",
+            "payload": {"headers": [], "body": {"data": ""}},
+        }
         servicio.users.return_value.messages.return_value.get.side_effect = [
             RuntimeError("mensaje ilegible"),
-            {"id": "correcto", "payload": {"headers": [], "body": {"data": ""}}},
+            correcto,
         ]
         with patch("talento.conectores_fuentes.importar_mensaje",
                    return_value={"candidato_id": 7, "creado": True}) as importar:
