@@ -182,6 +182,16 @@ class AccionRevisionPendienteTests(TestCase):
             Candidato.RevisionDocumental.RECHAZADO,
         )
 
+    def test_colaborador_no_ve_accion_masiva(self):
+        Membresia.objects.create(
+            organizacion=self.organizacion, usuario=self.usuario,
+            rol=Membresia.Rol.COLABORADOR,
+        )
+        self.assertNotIn(
+            "marcar_revision_pendiente",
+            self.admin.get_actions(self.request),
+        )
+
     def test_supervisor_no_modifica_otra_organizacion(self):
         Membresia.objects.create(
             organizacion=self.organizacion, usuario=self.usuario,
