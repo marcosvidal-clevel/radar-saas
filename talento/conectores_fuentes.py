@@ -1,64 +1,89 @@
-"""Lectura paginada desde clientes autenticados, sin almacenar credenciales.
-
-Los clientes Gmail y Drive son inyectados por la capa de integración.
-Esta capa nunca elimina ni modifica mensajes o archivos de origen.
-"""
+"""Conectores de lectura Gmail/Drive con clientes autenticados inyectados."""
 import base64
 
 from .fuentes_importacion import importar_carpeta_drive, importar_mensaje
 
 
-def _texto_base64url(valor):
-    if not valor:
-        return ""
-    return base64.urlsafe_b64decode(valor + "=" * (-len(valor) % 4)).decode(
-        "utf-8", errors="replace"
-    )
+def _decodificar(dato):
+    return base64.urlsafe_b64decode(dato + "=" * (-len(dato) % 4))
 
 
-def _cuerpo_gmail(payload):
-    if payload.get("mimeType", "").startswith("text/plain") and payload.get("body", {}).get("data"):
-        return _texto_base64url(payload["body"]["data"])
+def _texto(payload):
+    if payload.get("mimeType", "").startswith("text/plain"):
+        dato = payload.get("body", {}).get("data")
+        if dato:
+            return _decodificar(dato).decode("utf-8", errors="replace")
     for parte in payload.get("parts") or ():
-        texto = _cuerpo_gmail(parte)
-        if texto:
-            return texto
+        resultado = _texto(parte)
+        if resultado:
+            return resultado
     return ""
 
 
-def _partes_adjuntas(payload):
+def _adjuntos(payload):
     if payload.get("filename") and payload.get("body", {}).get("attachmentId"):
         yield payload
     for parte in payload.get("parts") or ():
-        yield from _partes_adjuntas(parte)
+        yield from _adjuntos(parte)
 
 
 def importar_gmail_api(*, organizacion, servicio, consulta="has:attachment", limite=100):
-    """Consume API Gmail users.messages.list/get y attachments.get.
-
-    servicio es un cliente googleapiclient autenticado. No requiere permisos
-    de escritura; la consulta y el límite los define el llamador.
-    """
+    """Lee mensajes y adjuntos sin modificar la cuenta de origen."""
+    if limite <= 0:
+        return []
     resultados = []
     pagina = None
     while len(resultados) < limite:
-        argumentos = {"userId": "me", "q": consulta, "maxResults": min(100, limite - len(resultados))}
+        parametros = {"userId": "me", "q": consulta,
+                      "maxResults": min(100, limite - len(resultados))}
         if pagina:
-            argumentos["pageToken"] = pagina
-        respuesta = servicio.users().messages().list(**argumentos).execute()
+            parametros["pageToken"] = pagina
+        respuesta = servicio.users().messages().list(**parametros).execute()
         mensajes = respuesta.get("messages") or []
-        for referencia in mensajes:\n            try:\n            except Exception as exc:\n                resultados.append({"estado": "error", "mensaje_id": referencia.get("id"),\n                                   "observacion": f"{type(exc).__name__}: {exc}"})\n        pagina = respuesta.get("nextPageToken")
+        for referencia in mensajes:
+            try:
+                mensaje = servicio.users().messages().get(
+                    userId="me", id=referencia["id"], format="full"
+                ).execute()
+                payload = mensaje.get("payload") or {}
+                cabeceras = {
+                    h.get("name", "").lower(): h.get("value", "")
+                    for h in payload.get("headers") or ()
+                }
+                adjuntos = []
+                for parte in _adjuntos(payload):
+                    adjunto_id = parte["body"]["attachmentId"]
+                    respuesta_adjunto = servicio.users().messages().attachments().get(
+                        userId="me", messageId=mensaje["id"], id=adjunto_id
+                    ).execute()
+                    adjuntos.append({
+                        "id": adjunto_id, "nombre": parte["filename"],
+                        "contenido": _decodificar(respuesta_adjunto.get("data") or ""),
+                    })
+                resultados.append(importar_mensaje(
+                    organizacion=organizacion,
+                    mensaje={"id": mensaje["id"],
+                             "asunto": cabeceras.get("subject", ""),
+                             "remitente": cabeceras.get("from", ""),
+                             "cuerpo": _texto(payload), "adjuntos": adjuntos},
+                ))
+            except Exception as exc:
+                resultados.append({
+                    "estado": "error", "mensaje_id": referencia.get("id"),
+                    "observacion": f"{type(exc).__name__}: {exc}",
+                })
+            if len(resultados) >= limite:
+                break
+        pagina = respuesta.get("nextPageToken")
         if not pagina or not mensajes:
             break
     return resultados
 
 
 def importar_drive_api(*, organizacion, servicio, carpeta_id, limite=100):
-    """Lee archivos binarios desde una carpeta usando Drive API v3.
-
-    Requiere cliente autorizado con permiso de lectura de los archivos.
-    Los documentos nativos de Google necesitan exportación previa.
-    """
+    """Lee archivos de Drive v3 sin modificar los originales."""
+    if limite <= 0:
+        return []
     resultados = []
     pagina = None
     while len(resultados) < limite:
@@ -67,24 +92,33 @@ def importar_drive_api(*, organizacion, servicio, carpeta_id, limite=100):
             "fields": "nextPageToken,files(id,name,mimeType)",
             "pageSize": min(100, limite - len(resultados)),
         }
-        # googleapiclient usa pageSize, no page_size.
-        parametros["pageSize"] = parametros.pop("page_size")
         if pagina:
             parametros["pageToken"] = pagina
         respuesta = servicio.files().list(**parametros).execute()
-        for archivo in respuesta.get("files") or ():
-            if archivo.get("mimeType", "").startswith("application/vnd.google-apps."):
-                resultados.append({"estado": "pendiente", "archivo_id": archivo["id"],
-                                   "observacion": "Documento nativo requiere exportación"})
-                continue
-            contenido = servicio.files().get_media(fileId=archivo["id"]).execute()
-            resultados.extend(importar_carpeta_drive(
-                organizacion=organizacion, carpeta_id=carpeta_id,
-                archivos=[{**archivo, "contenido": contenido}],
-            ))
+        archivos = respuesta.get("files") or []
+        for archivo in archivos:
+            try:
+                if archivo.get("mimeType", "").startswith("application/vnd.google-apps."):
+                    resultados.append({
+                        "estado": "pendiente", "archivo_id": archivo["id"],
+                        "observacion": "Documento nativo requiere exportación",
+                    })
+                else:
+                    contenido = servicio.files().get_media(
+                        fileId=archivo["id"]
+                    ).execute()
+                    resultados.extend(importar_carpeta_drive(
+                        organizacion=organizacion, carpeta_id=carpeta_id,
+                        archivos=[{**archivo, "contenido": contenido}],
+                    ))
+            except Exception as exc:
+                resultados.append({
+                    "estado": "error", "archivo_id": archivo.get("id"),
+                    "observacion": f"{type(exc).__name__}: {exc}",
+                })
             if len(resultados) >= limite:
                 break
-\n            try:\n            except Exception as exc:\n                resultados.append({"estado": "error", "archivo_id": archivo.get("id"),\n                                   "observacion": f"{type(exc).__name__}: {exc}"})\n        pagina = respuesta.get("nextPageToken")
-        if not pagina or not respuesta.get("files"):
+        pagina = respuesta.get("nextPageToken")
+        if not pagina or not archivos:
             break
     return resultados
