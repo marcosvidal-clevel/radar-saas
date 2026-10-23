@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from django.test import SimpleTestCase
 
-from talento.conectores_fuentes import importar_drive_api, importar_gmail_api
+from talento.conectores_fuentes import _texto, importar_drive_api, importar_gmail_api
 
 
 class ConectoresFuentesTests(SimpleTestCase):
@@ -30,6 +30,16 @@ class ConectoresFuentesTests(SimpleTestCase):
         self.assertEqual(resultado[0]["estado"], "error")
         importar.assert_called_once()
         self.assertEqual(resultado[1]["candidato_id"], 7)
+
+    def test_gmail_extrae_texto_de_html_si_no_hay_texto_plano(self):
+        import base64
+        html = "<html><head><title>oculto</title></head><body><p>Nombre: Ana</p><script>alert(1)</script><p>RUT: 123</p></body></html>"
+        dato = base64.urlsafe_b64encode(html.encode()).decode().rstrip("=")
+        texto = _texto({"mimeType": "text/html", "body": {"data": dato}})
+        self.assertIn("Nombre: Ana", texto)
+        self.assertIn("RUT: 123", texto)
+        self.assertNotIn("alert", texto)
+        self.assertNotIn("oculto", texto)
 
     def test_drive_continua_si_un_archivo_falla(self):
         servicio = MagicMock()
