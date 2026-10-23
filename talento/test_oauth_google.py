@@ -47,6 +47,13 @@ class OAuthGoogleTests(SimpleTestCase):
     def test_scopes_minimos_de_lectura_se_aceptan(self):
         self.assertTrue(validar_scopes([GMAIL_SCOPE, DRIVE_SCOPE]))
 
+    def test_scopes_adicionales_de_solo_lectura_se_rechazan(self):
+        with self.assertRaises(PermissionDenied):
+            validar_scopes([
+                GMAIL_SCOPE, DRIVE_SCOPE,
+                "https://www.googleapis.com/auth/drive.metadata.readonly",
+            ])
+
     def test_scopes_insuficientes_se_rechazan(self):
         with self.assertRaises(PermissionDenied):
             validar_scopes([GMAIL_SCOPE])
