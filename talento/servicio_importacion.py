@@ -17,7 +17,7 @@ def registrar_candidato_importado(*, organizacion, datos, origen, identificador)
     if not origen or not identificador:
         raise ValueError("La procedencia e identificador son obligatorios para evitar duplicados.")
     datos = dict(datos or {})
-    campos = ("nombre", "email", "telefono", "profesion", "experiencia")
+    campos = ("nombre", "rut", "direccion", "email", "telefono", "profesion", "experiencia")
     valores = {campo: str(datos.get(campo) or "").strip() for campo in campos}
     if not valores["nombre"]:
         valores["nombre"] = f"Pendiente de identificación ({identificador[:35]})"
