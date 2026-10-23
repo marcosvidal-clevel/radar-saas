@@ -63,5 +63,6 @@ class RevisionAntecedentesTests(TestCase):
         self.candidato.documentos.create(
             nombre="CV antiguo", tipo=DocumentoCandidato.Tipo.CURRICULUM,
             vigente=False,
+            archivo=ContentFile(b"%PDF-1.4\\n%%EOF", name="cv_antiguo.pdf"),
         )
         self.assertIn("CV", self.admin.revision_antecedentes(self.candidato))
