@@ -121,6 +121,28 @@ class FlujoImportacionTests(TestCase):
         self.assertEqual(candidato.documentos.count(), 1)
         self.assertEqual(candidato.documentos.first().tipo, "curriculum")
 
+    def test_pdf_secundario_va_a_otros_documentos_y_no_se_duplica(self):
+        argumentos = dict(
+            organizacion=self.organizacion,
+            origen="gmail",
+            identificador="correo-certificado",
+            adjuntos=[{
+                "nombre": "certificado_experiencia.pdf",
+                "contenido": b"%PDF-1.4\\n%%EOF",
+                "identificador_origen": "certificado-001",
+            }],
+        )
+        primero = importar_candidato(**argumentos)
+        segundo = importar_candidato(**argumentos)
+        self.assertTrue(primero["creado"])
+        self.assertFalse(segundo["creado"])
+        self.assertEqual(primero["errores_documentos"], 0)
+        self.assertEqual(segundo["errores_documentos"], 0)
+        candidato = Candidato.objects.get(pk=primero["candidato_id"])
+        self.assertEqual(candidato.documentos.count(), 0)
+        self.assertEqual(candidato.otros_adjuntos_importados.count(), 1)
+        self.assertEqual(candidato.otros_adjuntos_importados.first().tipo, "otro")
+
     def test_archivo_grande_se_conserva_en_otros_documentos(self):
         resultado = importar_candidato(
             organizacion=self.organizacion, origen="prueba",
