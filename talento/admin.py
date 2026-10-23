@@ -93,6 +93,17 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
             faltantes.append("título")
         return "Completo" if not faltantes else "Por revisar: " + ", ".join(faltantes)
 
+    @admin.action(description="Marcar revisión documental como pendiente")
+    def marcar_revision_pendiente(self, request, queryset):
+        if not self.has_change_permission(request):
+            raise PermissionDenied
+        actualizados = queryset.filter(
+            pk__in=self.get_queryset(request).values("pk")
+        ).update(revision_documental=Candidato.RevisionDocumental.PENDIENTE)
+        self.message_user(request, f"{actualizados} candidatos pendientes de revisión.")
+
+    actions = ("marcar_revision_pendiente",)
+
     def get_search_results(self, request, queryset, search_term):
         resultados_normales, use_distinct = (
             super().get_search_results(
