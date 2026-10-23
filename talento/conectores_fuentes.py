@@ -47,33 +47,7 @@ def importar_gmail_api(*, organizacion, servicio, consulta="has:attachment", lim
             argumentos["pageToken"] = pagina
         respuesta = servicio.users().messages().list(**argumentos).execute()
         mensajes = respuesta.get("messages") or []
-        for referencia in mensajes:
-            mensaje = servicio.users().messages().get(
-                userId="me", id=referencia["id"], format="full"
-            ).execute()
-            payload = mensaje.get("payload") or {}
-            cabeceras = {h.get("name", "").lower(): h.get("value", "")
-                         for h in payload.get("headers") or ()}
-            adjuntos = []
-            for parte in _partes_adjuntas(payload):
-                adjunto_id = parte["body"]["attachmentId"]
-                contenido = servicio.users().messages().attachments().get(
-                    userId="me", messageId=mensaje["id"], id=adjunto_id
-                ).execute()
-                datos = contenido.get("data") or ""
-                adjuntos.append({
-                    "id": adjunto_id, "nombre": parte["filename"],
-                    "contenido": base64.urlsafe_b64decode(datos + "=" * (-len(datos) % 4)),
-                })
-            resultados.append(importar_mensaje(
-                organizacion=organizacion,
-                mensaje={"id": mensaje["id"], "asunto": cabeceras.get("subject", ""),
-                         "remitente": cabeceras.get("from", ""),
-                         "cuerpo": _cuerpo_gmail(payload), "adjuntos": adjuntos},
-            ))
-            if len(resultados) >= limite:
-                break
-        pagina = respuesta.get("nextPageToken")
+        for referencia in mensajes:\n            try:\n            except Exception as exc:\n                resultados.append({"estado": "error", "mensaje_id": referencia.get("id"),\n                                   "observacion": f"{type(exc).__name__}: {exc}"})\n        pagina = respuesta.get("nextPageToken")
         if not pagina or not mensajes:
             break
     return resultados
@@ -110,7 +84,7 @@ def importar_drive_api(*, organizacion, servicio, carpeta_id, limite=100):
             ))
             if len(resultados) >= limite:
                 break
-        pagina = respuesta.get("nextPageToken")
+\n            try:\n            except Exception as exc:\n                resultados.append({"estado": "error", "archivo_id": archivo.get("id"),\n                                   "observacion": f"{type(exc).__name__}: {exc}"})\n        pagina = respuesta.get("nextPageToken")
         if not pagina or not respuesta.get("files"):
             break
     return resultados
