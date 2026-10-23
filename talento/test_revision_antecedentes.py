@@ -1,5 +1,6 @@
 """Pruebas del indicador informativo de antecedentes en administración."""
-from django.contrib import admin\nfrom django.test import TestCase
+from django.contrib import admin
+from django.test import TestCase
 
 from core.models import Organizacion
 from talento.admin import CandidatoAdmin
