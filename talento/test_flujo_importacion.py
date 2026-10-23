@@ -43,3 +43,13 @@ class FlujoImportacionTests(TestCase):
         )
         self.assertEqual(resultado["errores_documentos"], 1)
         self.assertTrue(Candidato.objects.filter(pk=resultado["candidato_id"]).exists())
+
+    def test_rut_y_direccion_persisten_en_ficha(self):
+        resultado = importar_candidato(
+            organizacion=self.organizacion, origen="prueba",
+            identificador="mensaje-004",
+            texto="Nombre: Persona Ejemplo\\nRUT: 12.345.678-5\\nDirección: Calle Ficticia 123",
+        )
+        candidato = Candidato.objects.get(pk=resultado["candidato_id"])
+        self.assertEqual(candidato.rut, "12345678-5")
+        self.assertEqual(candidato.direccion, "Calle Ficticia 123")
