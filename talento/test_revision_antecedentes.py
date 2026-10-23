@@ -4,7 +4,7 @@ from django.core.files.base import ContentFile
 from django.test import TestCase
 
 from core.models import Organizacion
-from talento.admin import CandidatoAdmin
+from talento.admin import CandidatoAdmin, RevisionCandidatoForm
 from talento.models import Candidato, DocumentoCandidato
 
 
@@ -40,6 +40,31 @@ class RevisionAntecedentesTests(TestCase):
             self.candidato.observaciones_revision,
             "Documento ilegible; solicitar copia.",
         )
+
+    def test_rechazo_documental_exige_motivo(self):
+        formulario = RevisionCandidatoForm(
+            data={
+                "organizacion": self.organizacion.pk,
+                "nombre": "Persona Ejemplo",
+                "revision_documental": Candidato.RevisionDocumental.RECHAZADO,
+                "observaciones_revision": "   ",
+            },
+            instance=self.candidato,
+        )
+        self.assertFalse(formulario.is_valid())
+        self.assertIn("observaciones_revision", formulario.errors)
+
+    def test_rechazo_documental_con_motivo_es_valido(self):
+        formulario = RevisionCandidatoForm(
+            data={
+                "organizacion": self.organizacion.pk,
+                "nombre": "Persona Ejemplo",
+                "revision_documental": Candidato.RevisionDocumental.RECHAZADO,
+                "observaciones_revision": "Título ilegible.",
+            },
+            instance=self.candidato,
+        )
+        self.assertNotIn("observaciones_revision", formulario.errors)
 
     def test_incompleto_se_informa_sin_rechazar_ficha(self):
         self.assertEqual(
