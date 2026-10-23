@@ -53,3 +53,15 @@ class FlujoImportacionTests(TestCase):
         candidato = Candidato.objects.get(pk=resultado["candidato_id"])
         self.assertEqual(candidato.rut, "12345678-5")
         self.assertEqual(candidato.direccion, "Calle Ficticia 123")
+
+    def test_organizaciones_no_comparten_fichas(self):
+        segunda = Organizacion.objects.create(
+            nombre="Segunda organización", slug="segunda-organizacion"
+        )
+        primero = importar_candidato(
+            organizacion=self.organizacion, origen="prueba", identificador="compartido",
+        )
+        segundo = importar_candidato(
+            organizacion=segunda, origen="prueba", identificador="compartido",
+        )
+        self.assertNotEqual(primero["candidato_id"], segundo["candidato_id"])
