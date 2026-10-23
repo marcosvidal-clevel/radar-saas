@@ -91,7 +91,7 @@ def importar_drive_api(*, organizacion, servicio, carpeta_id, limite=100):
         parametros = {
             "q": f"'{carpeta_id}' in parents and trashed = false",
             "fields": "nextPageToken,files(id,name,mimeType)",
-            "page_size": min(100, limite - len(resultados)),
+            "pageSize": min(100, limite - len(resultados)),
         }
         # googleapiclient usa pageSize, no page_size.
         parametros["pageSize"] = parametros.pop("page_size")
