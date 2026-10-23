@@ -18,6 +18,29 @@ class RevisionAntecedentesTests(TestCase):
         )
         self.admin = CandidatoAdmin(Candidato, admin.site)
 
+    def test_revision_documental_independiente_de_disponibilidad(self):
+        self.assertEqual(
+            self.candidato.revision_documental,
+            Candidato.RevisionDocumental.PENDIENTE,
+        )
+        self.assertEqual(self.candidato.estado, Candidato.Estado.DISPONIBLE)
+        self.candidato.revision_documental = Candidato.RevisionDocumental.RECHAZADO
+        self.candidato.observaciones_revision = "Documento ilegible; solicitar copia."
+        self.candidato.save(
+            update_fields=["revision_documental", "observaciones_revision"]
+        )
+        self.candidato.refresh_from_db()
+        self.assertEqual(
+            self.candidato.revision_documental,
+            Candidato.RevisionDocumental.RECHAZADO,
+        )
+        self.assertEqual(self.candidato.estado, Candidato.Estado.DISPONIBLE)
+        self.assertTrue(self.candidato.activo)
+        self.assertEqual(
+            self.candidato.observaciones_revision,
+            "Documento ilegible; solicitar copia.",
+        )
+
     def test_incompleto_se_informa_sin_rechazar_ficha(self):
         self.assertEqual(
             self.admin.revision_antecedentes(self.candidato),
