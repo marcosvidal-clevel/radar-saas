@@ -113,3 +113,19 @@ class VistasConexionGoogleTests(TestCase):
         self.conexion_a.refresh_from_db()
         self.assertFalse(self.conexion_a.activa)
         self.assertEqual(self.conexion_a.token_cifrado, "")
+
+    def test_desconexion_invalida_credenciales_antes_de_llamar_a_google(self):
+        import json
+        from unittest.mock import patch
+        self.client.force_login(self.admin)
+
+        def comprobar_estado_local(*args, **kwargs):
+            self.conexion_a.refresh_from_db()
+            self.assertFalse(self.conexion_a.activa)
+            self.assertEqual(self.conexion_a.token_cifrado, "")
+            from unittest.mock import Mock
+            return Mock(status_code=200)
+
+        with patch("talento.oauth_google.descifrar_token", return_value=json.dumps({"refresh_token": "token-prueba"})), patch("requests.post", side_effect=comprobar_estado_local):
+            respuesta = self.client.post(reverse("google_desconectar", args=[self.org_a.pk, self.conexion_a.pk]))
+        self.assertEqual(respuesta.status_code, 302)
