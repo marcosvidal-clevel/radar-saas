@@ -1,6 +1,6 @@
 
 from django.contrib import admin
-from django.urls import path
+from django.urls import include, path
 from talento import entradas_views
 
 from core.views import (
@@ -30,6 +30,7 @@ from talento.views import (
 
 
 urlpatterns = [
+    path("integraciones/google/", include("integraciones_google.urls")),
     path("seleccion/entradas/", entradas_views.bandeja, name="entradas_pendientes"),
     path("seleccion/entradas/nueva/", entradas_views.editar, name="entrada_nueva"),
     path("seleccion/entradas/<int:pk>/", entradas_views.detalle, name="entrada_detalle"),
