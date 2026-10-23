@@ -1,7 +1,7 @@
 """Pruebas de extracción y validación del RUT chileno."""
 from django.test import SimpleTestCase
 
-from talento.rut_importacion import extraer_rut, normalizar_rut
+from talento.rut_importacion import normalizar_rut
 from talento.preparacion_importacion import preparar_importacion
 
 
