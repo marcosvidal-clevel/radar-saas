@@ -71,10 +71,10 @@ def _adjuntos(payload):
 
 def importar_gmail_api(*, organizacion, servicio, consulta, limite=100):
     """Lee mensajes y adjuntos sin modificar la cuenta de origen."""
-    if not isinstance(consulta, str) or not consulta.strip():
-        raise ValueError("Defina una consulta Gmail específica para evitar importar toda la bandeja.")
     if limite <= 0:
         return []
+    if not isinstance(consulta, str) or not consulta.strip():
+        raise ValueError("Defina una consulta Gmail específica para evitar importar toda la bandeja.")
     resultados = []
     pagina = None
     while len(resultados) < limite:
