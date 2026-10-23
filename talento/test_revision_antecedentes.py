@@ -241,6 +241,24 @@ class AccionRevisionPendienteTests(TestCase):
             "Se solicitó nuevo título.",
         )
 
+    def test_accion_masiva_no_altera_estado_laboral(self):
+        Membresia.objects.create(
+            organizacion=self.organizacion, usuario=self.usuario,
+            rol=Membresia.Rol.SUPERVISOR,
+        )
+        self.candidato.estado = Candidato.Estado.EN_PROCESO
+        self.candidato.save(update_fields=["estado"])
+        with patch.object(self.admin, "message_user"):
+            self.admin.marcar_revision_pendiente(
+                self.request, Candidato.objects.filter(pk=self.candidato.pk)
+            )
+        self.candidato.refresh_from_db()
+        self.assertEqual(self.candidato.estado, Candidato.Estado.EN_PROCESO)
+        self.assertEqual(
+            self.candidato.revision_documental,
+            Candidato.RevisionDocumental.PENDIENTE,
+        )
+
     def test_supervisor_no_modifica_otra_organizacion(self):
         Membresia.objects.create(
             organizacion=self.organizacion, usuario=self.usuario,
