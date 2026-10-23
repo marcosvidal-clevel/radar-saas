@@ -7,6 +7,26 @@ from talento.conectores_fuentes import _texto, importar_drive_api, importar_gmai
 
 
 class ConectoresFuentesTests(SimpleTestCase):
+    def test_gmail_incluye_correos_sin_adjuntos_por_defecto(self):
+        servicio = MagicMock()
+        servicio.users.return_value.messages.return_value.list.return_value.execute.return_value = {
+            "messages": [{"id": "correo-solo-texto"}]
+        }
+        servicio.users.return_value.messages.return_value.get.return_value.execute.return_value = {
+            "id": "correo-solo-texto",
+            "payload": {"headers": [], "body": {"data": ""}},
+        }
+        with patch("talento.conectores_fuentes.importar_mensaje",
+                   return_value={"candidato_id": 21}) as importar:
+            resultado = importar_gmail_api(
+                organizacion=object(), servicio=servicio, limite=1
+            )
+        self.assertEqual(resultado, [{"candidato_id": 21}])
+        self.assertEqual(
+            servicio.users.return_value.messages.return_value.list.call_args.kwargs["q"], ""
+        )
+        self.assertEqual(importar.call_args.kwargs["mensaje"]["adjuntos"], [])
+
     def test_gmail_continua_si_un_mensaje_falla(self):
         servicio = MagicMock()
         servicio.users.return_value.messages.return_value.list.return_value.execute.return_value = {
