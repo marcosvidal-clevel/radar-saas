@@ -1,13 +1,11 @@
 """Pruebas del flujo completo de importación con almacenamiento temporal."""
 import tempfile
-from pathlib import Path
 
-from django.core.files.storage import FileSystemStorage
 from django.test import TestCase, override_settings
 
 from core.models import Organizacion
 from talento.flujo_importacion import importar_candidato
-from talento.models import Candidato, DocumentoCandidato
+from talento.models import Candidato
 
 
 class FlujoImportacionTests(TestCase):
@@ -17,7 +15,7 @@ class FlujoImportacionTests(TestCase):
         self.ajuste = override_settings(MEDIA_ROOT=self.temporal.name)
         self.ajuste.enable()
         self.addCleanup(self.ajuste.disable)
-        self.organizacion = Organizacion.objects.create(nombre="Organización de prueba")
+        self.organizacion = Organizacion.objects.create(nombre="Organización de prueba", slug="organizacion-prueba")
 
     def test_ficha_incompleta_no_se_descarta(self):
         resultado = importar_candidato(
