@@ -65,3 +65,22 @@ class FlujoImportacionTests(TestCase):
             organizacion=segunda, origen="prueba", identificador="compartido",
         )
         self.assertNotEqual(primero["candidato_id"], segundo["candidato_id"])
+
+    def test_pdf_se_guarda_y_reintento_no_lo_duplica(self):
+        argumentos = dict(
+            organizacion=self.organizacion,
+            origen="prueba",
+            identificador="mensaje-pdf",
+            adjuntos=[{
+                "nombre": "CV_persona.pdf",
+                "contenido": b"%PDF-1.4\\n%%EOF",
+                "identificador_origen": "adjunto-pdf-001",
+            }],
+        )
+        primero = importar_candidato(**argumentos)
+        segundo = importar_candidato(**argumentos)
+        self.assertEqual(primero["errores_documentos"], 0)
+        self.assertEqual(segundo["errores_documentos"], 0)
+        candidato = Candidato.objects.get(pk=primero["candidato_id"])
+        self.assertEqual(candidato.documentos.count(), 1)
+        self.assertEqual(candidato.documentos.first().tipo, "curriculum")
