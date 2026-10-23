@@ -63,3 +63,25 @@ class VistasConexionGoogleTests(TestCase):
         self.assertEqual(response.status_code, 404)
         otra.refresh_from_db()
         self.assertTrue(otra.activa)
+
+
+    def test_colaborador_no_puede_iniciar_oauth(self):
+        self.client.force_login(self.colaborador)
+        response = self.client.get(reverse("google_iniciar_oauth", args=[self.org_a.pk]))
+        self.assertEqual(response.status_code, 403)
+
+    def test_callback_rechaza_state_ausente_o_no_vinculado_a_sesion(self):
+        self.client.force_login(self.admin)
+        session = self.client.session
+        session["google_oauth_org"] = self.org_a.pk
+        session["google_oauth_state"] = "state-esperado"
+        session.save()
+        response = self.client.get(reverse("google_oauth_callback"), {"state": "state-ajeno", "code": "codigo-falso"})
+        self.assertEqual(response.status_code, 403)
+
+    def test_callback_con_error_de_google_no_guarda_conexion(self):
+        self.client.force_login(self.admin)
+        before = ConexionGoogle.objects.count()
+        response = self.client.get(reverse("google_oauth_callback"), {"error": "access_denied"})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(ConexionGoogle.objects.count(), before)
