@@ -62,7 +62,7 @@ def _texto(payload):
 
 
 def _adjuntos(payload):
-    if payload.get("filename") and payload.get("body", {}).get("attachmentId"):
+    if payload.get("filename") and (payload.get("body", {}).get("attachmentId") or payload.get("body", {}).get("data")):
         yield payload
     for parte in payload.get("parts") or ():
         yield from _adjuntos(parte)
@@ -93,13 +93,19 @@ def importar_gmail_api(*, organizacion, servicio, consulta="has:attachment", lim
                 }
                 adjuntos = []
                 for parte in _adjuntos(payload):
-                    adjunto_id = parte["body"]["attachmentId"]
-                    respuesta_adjunto = servicio.users().messages().attachments().get(
-                        userId="me", messageId=mensaje["id"], id=adjunto_id
-                    ).execute()
+                    cuerpo_adjunto = parte["body"]
+                    adjunto_id = cuerpo_adjunto.get("attachmentId")
+                    if adjunto_id:
+                        respuesta_adjunto = servicio.users().messages().attachments().get(
+                            userId="me", messageId=mensaje["id"], id=adjunto_id
+                        ).execute()
+                        dato = respuesta_adjunto.get("data") or ""
+                    else:
+                        dato = cuerpo_adjunto.get("data") or ""
                     adjuntos.append({
-                        "id": adjunto_id, "nombre": parte["filename"],
-                        "contenido": _decodificar(respuesta_adjunto.get("data") or ""),
+                        "id": adjunto_id or parte.get("partId") or parte["filename"],
+                        "nombre": parte["filename"],
+                        "contenido": _decodificar(dato),
                     })
                 resultados.append(importar_mensaje(
                     organizacion=organizacion,
