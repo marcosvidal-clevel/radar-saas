@@ -192,6 +192,16 @@ class AccionRevisionPendienteTests(TestCase):
             self.admin.get_actions(self.request),
         )
 
+    def test_supervisor_ve_accion_masiva_autorizada(self):
+        Membresia.objects.create(
+            organizacion=self.organizacion, usuario=self.usuario,
+            rol=Membresia.Rol.SUPERVISOR,
+        )
+        self.assertIn(
+            "marcar_revision_pendiente",
+            self.admin.get_actions(self.request),
+        )
+
     def test_supervisor_no_modifica_otra_organizacion(self):
         Membresia.objects.create(
             organizacion=self.organizacion, usuario=self.usuario,
