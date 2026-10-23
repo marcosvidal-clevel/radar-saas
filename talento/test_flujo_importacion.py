@@ -5,7 +5,7 @@ from django.test import TestCase, override_settings
 
 from core.models import Organizacion
 from talento.flujo_importacion import importar_candidato
-from talento.models import Candidato
+from talento.models import AdjuntoImportado, Candidato
 
 
 class FlujoImportacionTests(TestCase):
@@ -41,7 +41,8 @@ class FlujoImportacionTests(TestCase):
             identificador="mensaje-003",
             adjuntos=[{"nombre": "foto.jpg", "contenido": b"datos", "identificador_origen": "a1"}],
         )
-        self.assertEqual(resultado["errores_documentos"], 1)
+        self.assertEqual(resultado["errores_documentos"], 0)
+        self.assertEqual(AdjuntoImportado.objects.filter(candidato_id=resultado["candidato_id"]).count(), 1)
         self.assertTrue(Candidato.objects.filter(pk=resultado["candidato_id"]).exists())
 
     def test_rut_y_direccion_persisten_en_ficha(self):
@@ -84,3 +85,13 @@ class FlujoImportacionTests(TestCase):
         candidato = Candidato.objects.get(pk=primero["candidato_id"])
         self.assertEqual(candidato.documentos.count(), 1)
         self.assertEqual(candidato.documentos.first().tipo, "curriculum")
+
+    def test_archivo_grande_se_conserva_en_otros_documentos(self):
+        resultado = importar_candidato(
+            organizacion=self.organizacion, origen="prueba",
+            identificador="mensaje-grande",
+            adjuntos=[{"nombre": "respaldo.zip", "contenido": b"x" * (10 * 1024 * 1024 + 1),
+                       "identificador_origen": "archivo-grande"}],
+        )
+        self.assertEqual(resultado["errores_documentos"], 0)
+        self.assertEqual(AdjuntoImportado.objects.filter(candidato_id=resultado["candidato_id"]).count(), 1)
