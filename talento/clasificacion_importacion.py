@@ -17,9 +17,9 @@ def clasificar_adjunto(nombre_archivo, texto=""):
         return "curriculum"
     if re.search(r"\b(titulo|diploma de titulo|certificado de titulo)\b", nombre):
         return "titulo"
-    if re.search(r"\b(curriculum vitae|experiencia laboral|perfil profesional)\b", contenido):
+    if re.search(r"\b(curriculum vitae|hoja de vida|resume)\b", contenido):
         return "curriculum"
-    if re.search(r"\b(titulo profesional|titulo academico|grado academico)\b", contenido):
+    if re.search(r"\b(titulo profesional|titulo academico|diploma de titulo)\b", contenido):
         return "titulo"
     return "otro"
 
