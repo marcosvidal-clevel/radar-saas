@@ -220,6 +220,27 @@ class AccionRevisionPendienteTests(TestCase):
             Candidato.RevisionDocumental.PENDIENTE,
         )
 
+    def test_volver_a_pendiente_conserva_observacion(self):
+        Membresia.objects.create(
+            organizacion=self.organizacion, usuario=self.usuario,
+            rol=Membresia.Rol.SUPERVISOR,
+        )
+        self.candidato.observaciones_revision = "Se solicitó nuevo título."
+        self.candidato.save(update_fields=["observaciones_revision"])
+        with patch.object(self.admin, "message_user"):
+            self.admin.marcar_revision_pendiente(
+                self.request, Candidato.objects.filter(pk=self.candidato.pk)
+            )
+        self.candidato.refresh_from_db()
+        self.assertEqual(
+            self.candidato.revision_documental,
+            Candidato.RevisionDocumental.PENDIENTE,
+        )
+        self.assertEqual(
+            self.candidato.observaciones_revision,
+            "Se solicitó nuevo título.",
+        )
+
     def test_supervisor_no_modifica_otra_organizacion(self):
         Membresia.objects.create(
             organizacion=self.organizacion, usuario=self.usuario,
