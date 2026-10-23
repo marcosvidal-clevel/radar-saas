@@ -24,6 +24,8 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
     list_display = (
         "nombre",
         "organizacion",
+        "rut",
+        "email",
         "profesion",
         "especialidad",
         "region",
@@ -42,6 +44,7 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
 
     search_fields = (
         "nombre",
+        "rut",
         "email",
         "telefono",
         "profesion",
@@ -110,6 +113,8 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
                 "fields": (
                     "organizacion",
                     "nombre",
+                    "rut",
+                    "direccion",
                     "email",
                     "telefono",
                     "linkedin",
