@@ -63,20 +63,13 @@ def descifrar_token(token_cifrado):
 
 
 def validar_scopes(concedidos):
+    """Acepta exclusivamente los dos scopes solicitados; rechaza permisos extra."""
     concedidos = set(concedidos or ())
-    if not set(SCOPES).issubset(concedidos):
-        raise PermissionDenied("Faltan permisos de lectura requeridos.")
-    no_permitidos = {
-        scope for scope in concedidos
-        if scope in {
-            "https://www.googleapis.com/auth/gmail.modify",
-            "https://www.googleapis.com/auth/gmail.send",
-            "https://www.googleapis.com/auth/drive",
-            "https://www.googleapis.com/auth/drive.file",
-        }
-    }
-    if no_permitidos:
-        raise PermissionDenied("Google concedió permisos más amplios que los autorizados.")
+    requeridos = set(SCOPES)
+    if concedidos != requeridos:
+        raise PermissionDenied(
+            "Los permisos concedidos no coinciden exactamente con los permisos mínimos de lectura."
+        )
     return True
 
 
