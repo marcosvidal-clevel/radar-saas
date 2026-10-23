@@ -48,7 +48,7 @@ class FlujoImportacionTests(TestCase):
         resultado = importar_candidato(
             organizacion=self.organizacion, origen="prueba",
             identificador="mensaje-004",
-            texto="Nombre: Persona Ejemplo\\nRUT: 12.345.678-5\\nDirección: Calle Ficticia 123",
+            texto="Nombre: Persona Ejemplo\nRUT: 12.345.678-5\nDirección: Calle Ficticia 123",
         )
         candidato = Candidato.objects.get(pk=resultado["candidato_id"])
         self.assertEqual(candidato.rut, "12345678-5")
