@@ -70,6 +70,27 @@ class FlujoImportacionTests(TestCase):
         self.assertEqual(candidato.nombre, "Nombre Validado")
         self.assertEqual(candidato.email, "validado@example.com")
 
+    def test_reimportacion_no_revierte_aprobacion_documental(self):
+        inicial = importar_candidato(
+            organizacion=self.organizacion, origen="gmail",
+            identificador="mensaje-aprobado", texto="Nombre: Persona Validada",
+        )
+        candidato = Candidato.objects.get(pk=inicial["candidato_id"])
+        candidato.revision_documental = Candidato.RevisionDocumental.APROBADO
+        candidato.observaciones_revision = "Revisado por selección."
+        candidato.save(update_fields=["revision_documental", "observaciones_revision"])
+        reintento = importar_candidato(
+            organizacion=self.organizacion, origen="gmail",
+            identificador="mensaje-aprobado",
+            texto="Nombre: Persona Validada\\nCorreo: persona@example.com",
+        )
+        candidato.refresh_from_db()
+        self.assertFalse(reintento["creado"])
+        self.assertEqual(
+            candidato.revision_documental, Candidato.RevisionDocumental.APROBADO
+        )
+        self.assertEqual(candidato.observaciones_revision, "Revisado por selección.")
+
     def test_archivo_incompatible_no_bloquea_ficha(self):
         resultado = importar_candidato(
             organizacion=self.organizacion, origen="prueba",
