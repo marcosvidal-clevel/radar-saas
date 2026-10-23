@@ -43,7 +43,7 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
         "activo",
         "region",
         "origen_importacion",
-        "consolidado_en__isnull",
+        ("consolidado_en", admin.RelatedOnlyFieldListFilter),
     )
 
     search_fields = (
