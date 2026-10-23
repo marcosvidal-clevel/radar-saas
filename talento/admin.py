@@ -93,6 +93,12 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
             faltantes.append("título")
         return "Completo" if not faltantes else "Por revisar: " + ", ".join(faltantes)
 
+    def get_actions(self, request):
+        acciones = super().get_actions(request)
+        if not self.has_change_permission(request):
+            acciones.pop("marcar_revision_pendiente", None)
+        return acciones
+
     @admin.action(description="Marcar revisión documental como pendiente")
     def marcar_revision_pendiente(self, request, queryset):
         if not self.has_change_permission(request):
