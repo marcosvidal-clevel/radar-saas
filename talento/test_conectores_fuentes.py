@@ -116,3 +116,14 @@ class ConectoresFuentesTests(SimpleTestCase):
         self.assertEqual(resultado[0]["estado"], "error")
         self.assertEqual(resultado[1]["candidato_id"], 9)
         importar.assert_called_once()
+
+    def test_drive_rechaza_identificador_inseguro_sin_consultar_api(self):
+        servicio = MagicMock()
+        for carpeta_id in ("", "  ", "carpeta' or trashed = false", "carpeta\\nmaliciosa", None):
+            with self.subTest(carpeta_id=carpeta_id):
+                with self.assertRaises(ValueError):
+                    importar_drive_api(
+                        organizacion=object(), servicio=servicio,
+                        carpeta_id=carpeta_id, limite=10,
+                    )
+        servicio.files.assert_not_called()
