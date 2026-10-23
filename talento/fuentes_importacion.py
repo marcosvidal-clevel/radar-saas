@@ -47,7 +47,7 @@ def importar_carpeta_drive(*, organizacion, carpeta_id, archivos):
             identificador=identificador,
             texto=str(archivo.get("texto") or ""),
             adjuntos=[{
-                "nombre": archivo.get("nombre") or "archivo",
+                "nombre": archivo.get("nombre") or archivo.get("name") or "archivo",
                 "contenido": archivo.get("contenido"),
                 "identificador_origen": identificador,
                 "texto": archivo.get("texto") or "",
