@@ -95,3 +95,36 @@ class FlujoImportacionTests(TestCase):
         )
         self.assertEqual(resultado["errores_documentos"], 0)
         self.assertEqual(AdjuntoImportado.objects.filter(candidato_id=resultado["candidato_id"]).count(), 1)
+
+    def test_piloto_ficticio_importa_lote_sin_bloquear_incompletos(self):
+        casos = [
+            ("piloto-completo", "Nombre: Persona Completa\\nRUT: 12.345.678-5\\nCorreo: completa@example.com", [
+                {"nombre": "CV_persona.pdf", "contenido": b"%PDF-1.4\\n%%EOF", "identificador_origen": "cv-1"},
+                {"nombre": "titulo_profesional.pdf", "contenido": b"%PDF-1.4\\n%%EOF", "identificador_origen": "titulo-1"},
+                {"nombre": "certificado.pdf", "contenido": b"%PDF-1.4\\n%%EOF", "identificador_origen": "otro-1"},
+            ]),
+            ("piloto-sin-archivos", "Nombre: Persona Sin Adjuntos", []),
+            ("piloto-sin-datos", "", [
+                {"nombre": "respaldo.zip", "contenido": b"contenido de prueba", "identificador_origen": "otro-2"},
+            ]),
+        ]
+        ids = []
+        for identificador, texto, adjuntos in casos:
+            resultado = importar_candidato(
+                organizacion=self.organizacion, origen="piloto-sintetico",
+                identificador=identificador, texto=texto, adjuntos=adjuntos,
+            )
+            self.assertTrue(resultado["creado"])
+            self.assertEqual(resultado["errores_documentos"], 0)
+            ids.append(resultado["candidato_id"])
+        self.assertEqual(len(set(ids)), 3)
+        self.assertEqual(Candidato.objects.filter(pk__in=ids).count(), 3)
+        self.assertEqual(AdjuntoImportado.objects.filter(candidato_id__in=ids).count(), 4)
+        for identificador, texto, adjuntos in casos:
+            resultado = importar_candidato(
+                organizacion=self.organizacion, origen="piloto-sintetico",
+                identificador=identificador, texto=texto, adjuntos=adjuntos,
+            )
+            self.assertFalse(resultado["creado"])
+        self.assertEqual(Candidato.objects.filter(pk__in=ids).count(), 3)
+        self.assertEqual(AdjuntoImportado.objects.filter(candidato_id__in=ids).count(), 4)
