@@ -91,6 +91,28 @@ class FlujoImportacionTests(TestCase):
         )
         self.assertEqual(candidato.observaciones_revision, "Revisado por selección.")
 
+    def test_reimportacion_no_revierte_rechazo_documental(self):
+        inicial = importar_candidato(
+            organizacion=self.organizacion, origen="drive",
+            identificador="archivo-rechazado", texto="Nombre: Persona Ejemplo",
+        )
+        candidato = Candidato.objects.get(pk=inicial["candidato_id"])
+        candidato.revision_documental = Candidato.RevisionDocumental.RECHAZADO
+        candidato.observaciones_revision = "Archivo sin respaldo suficiente."
+        candidato.save(update_fields=["revision_documental", "observaciones_revision"])
+        importar_candidato(
+            organizacion=self.organizacion, origen="drive",
+            identificador="archivo-rechazado", texto="Nombre: Persona Alternativa",
+        )
+        candidato.refresh_from_db()
+        self.assertEqual(
+            candidato.revision_documental, Candidato.RevisionDocumental.RECHAZADO
+        )
+        self.assertEqual(
+            candidato.observaciones_revision, "Archivo sin respaldo suficiente."
+        )
+        self.assertEqual(candidato.nombre, "Persona Ejemplo")
+
     def test_archivo_incompatible_no_bloquea_ficha(self):
         resultado = importar_candidato(
             organizacion=self.organizacion, origen="prueba",
