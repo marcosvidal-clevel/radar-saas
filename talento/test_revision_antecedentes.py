@@ -66,6 +66,18 @@ class RevisionAntecedentesTests(TestCase):
         )
         self.assertNotIn("observaciones_revision", formulario.errors)
 
+    def test_aprobacion_documental_no_exige_observaciones(self):
+        formulario = RevisionCandidatoForm(
+            data={
+                "organizacion": self.organizacion.pk,
+                "nombre": "Persona Ejemplo",
+                "revision_documental": Candidato.RevisionDocumental.APROBADO,
+                "observaciones_revision": "",
+            },
+            instance=self.candidato,
+        )
+        self.assertNotIn("observaciones_revision", formulario.errors)
+
     def test_incompleto_se_informa_sin_rechazar_ficha(self):
         self.assertEqual(
             self.admin.revision_antecedentes(self.candidato),
