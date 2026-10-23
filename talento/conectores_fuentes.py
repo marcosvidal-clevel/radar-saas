@@ -1,5 +1,6 @@
 """Conectores de lectura Gmail/Drive con clientes autenticados inyectados."""
 import base64
+from html.parser import HTMLParser
 
 from .fuentes_importacion import importar_carpeta_drive, importar_mensaje
 
@@ -8,15 +9,55 @@ def _decodificar(dato):
     return base64.urlsafe_b64decode(dato + "=" * (-len(dato) % 4))
 
 
+class _ExtractorHTML(HTMLParser):
+    """Convierte el cuerpo HTML a texto sin ejecutar contenido activo."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.fragmentos = []
+        self._ocultar = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() in {"script", "style", "head"}:
+            self._ocultar += 1
+        elif tag.lower() in {"p", "div", "br", "li", "tr"} and not self._ocultar:
+            self.fragmentos.append("\\n")
+
+    def handle_endtag(self, tag):
+        if tag.lower() in {"script", "style", "head"} and self._ocultar:
+            self._ocultar -= 1
+        elif tag.lower() in {"p", "div", "li", "tr"} and not self._ocultar:
+            self.fragmentos.append("\\n")
+
+    def handle_data(self, data):
+        if not self._ocultar:
+            self.fragmentos.append(data)
+
+    def texto(self):
+        return " ".join(" ".join("".join(self.fragmentos).split()).split())
+
+
 def _texto(payload):
+    """Prefiere texto plano; usa HTML como alternativa si no existe texto plano."""
+    html = ""
     if payload.get("mimeType", "").startswith("text/plain"):
         dato = payload.get("body", {}).get("data")
         if dato:
             return _decodificar(dato).decode("utf-8", errors="replace")
+    if payload.get("mimeType", "").startswith("text/html"):
+        dato = payload.get("body", {}).get("data")
+        if dato:
+            html = _decodificar(dato).decode("utf-8", errors="replace")
     for parte in payload.get("parts") or ():
         resultado = _texto(parte)
         if resultado:
-            return resultado
+            if parte.get("mimeType", "").startswith("text/plain"):
+                return resultado
+            html = html or resultado
+    if html:
+        parser = _ExtractorHTML()
+        parser.feed(html)
+        return parser.texto()
     return ""
 
 
