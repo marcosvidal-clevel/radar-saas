@@ -85,3 +85,31 @@ class VistasConexionGoogleTests(TestCase):
         response = self.client.get(reverse("google_oauth_callback"), {"error": "access_denied"})
         self.assertEqual(response.status_code, 400)
         self.assertEqual(ConexionGoogle.objects.count(), before)
+
+    def test_desconexion_revoca_token_remoto_y_limpia_token_local(self):
+        import json
+        from unittest.mock import Mock, patch
+        self.client.force_login(self.admin)
+        with patch("talento.oauth_google.descifrar_token", return_value=json.dumps({"refresh_token": "token-prueba"})), patch("requests.post") as enviar:
+            enviar.return_value = Mock(status_code=200)
+            respuesta = self.client.post(reverse("google_desconectar", args=[self.org_a.pk, self.conexion_a.pk]))
+        self.assertEqual(respuesta.status_code, 302)
+        enviar.assert_called_once_with(
+            "https://oauth2.googleapis.com/revoke",
+            data={"token": "token-prueba"},
+            timeout=10,
+        )
+        self.conexion_a.refresh_from_db()
+        self.assertFalse(self.conexion_a.activa)
+        self.assertEqual(self.conexion_a.token_cifrado, "")
+
+    def test_desconexion_limpia_token_local_si_falla_revocacion_remota(self):
+        import json
+        from unittest.mock import patch
+        self.client.force_login(self.admin)
+        with patch("talento.oauth_google.descifrar_token", return_value=json.dumps({"refresh_token": "token-prueba"})), patch("requests.post", side_effect=TimeoutError("Sin respuesta")):
+            respuesta = self.client.post(reverse("google_desconectar", args=[self.org_a.pk, self.conexion_a.pk]))
+        self.assertEqual(respuesta.status_code, 302)
+        self.conexion_a.refresh_from_db()
+        self.assertFalse(self.conexion_a.activa)
+        self.assertEqual(self.conexion_a.token_cifrado, "")
