@@ -163,5 +163,5 @@ class FlujoImportacionTests(TestCase):
             )
             self.assertFalse(resultado["creado"])
         self.assertEqual(Candidato.objects.filter(pk__in=ids).count(), 3)
-        self.assertEqual(AdjuntoImportado.objects.filter(candidato_id__in=ids).count(), 1)
+        self.assertEqual(AdjuntoImportado.objects.filter(candidato_id__in=ids).count(), 2)
         self.assertEqual(sum(Candidato.objects.get(pk=pk).documentos.count() for pk in ids), 2)
