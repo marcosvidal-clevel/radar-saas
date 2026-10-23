@@ -27,4 +27,17 @@ def registrar_candidato_importado(*, organizacion, datos, origen, identificador)
         identificador_origen=str(identificador),
         defaults=valores,
     )
+    if not creado:
+        # Un reintento puede aportar datos que faltaban, sin sobrescribir
+        # modificaciones o información ya validada por una persona.
+        cambios = []
+        if candidato.nombre.startswith("Pendiente de identificación (") and datos.get("nombre"):
+            candidato.nombre = valores["nombre"]
+            cambios.append("nombre")
+        for campo in ("rut", "direccion", "email", "telefono", "profesion", "experiencia"):
+            if not getattr(candidato, campo) and valores[campo]:
+                setattr(candidato, campo, valores[campo])
+                cambios.append(campo)
+        if cambios:
+            candidato.save(update_fields=cambios + ["actualizado_en"])
     return candidato, creado, observaciones
