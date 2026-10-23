@@ -136,19 +136,18 @@ def desconectar(request, organizacion_id, conexion_id):
     # Revocar el grant remoto antes de destruir la copia local.
     # Si falla la llamada remota, el token local se elimina igualmente.
     try:
-        from google.auth.transport.requests import Request
-        from google.oauth2.credentials import Credentials
+        import requests
         from talento.oauth_google import descifrar_token
         datos = json.loads(descifrar_token(conexion.token_cifrado))
-        credenciales = Credentials(
-            token=datos.get("token"),
-            refresh_token=datos.get("refresh_token"),
-            token_uri=datos.get("token_uri"),
-            client_id=datos.get("client_id"),
-            client_secret=datos.get("client_secret"),
-            scopes=datos.get("scopes") or SCOPES,
+        token = datos.get("refresh_token") or datos.get("token")
+        if not token:
+            raise ValueError("No existe token revocable.")
+        respuesta = requests.post(
+            "https://oauth2.googleapis.com/revoke",
+            data={"token": token},
+            timeout=10,
         )
-        credenciales.revoke(Request())
+        respuesta.raise_for_status()
     except Exception:
         logger.warning("No se pudo confirmar revocación remota para organización %s", organizacion.pk)
     conexion.token_cifrado = ""
