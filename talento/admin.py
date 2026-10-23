@@ -2,6 +2,7 @@
 import re
 
 from django.contrib import admin
+from django import forms
 from django.core.exceptions import PermissionDenied
 from django.utils.html import format_html
 from django.urls import reverse
@@ -18,8 +19,27 @@ from .models import (
 )
 
 
+class RevisionCandidatoForm(forms.ModelForm):
+    class Meta:
+        model = Candidato
+        fields = "__all__"
+
+    def clean(self):
+        cleaned = super().clean()
+        if (
+            cleaned.get("revision_documental") == Candidato.RevisionDocumental.RECHAZADO
+            and not (cleaned.get("observaciones_revision") or "").strip()
+        ):
+            self.add_error(
+                "observaciones_revision",
+                "Indique el motivo del rechazo documental.",
+            )
+        return cleaned
+
+
 @admin.register(Candidato)
 class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
+    form = RevisionCandidatoForm
 
     list_display = (
         "nombre",
