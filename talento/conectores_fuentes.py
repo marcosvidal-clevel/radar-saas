@@ -140,7 +140,7 @@ def importar_drive_api(*, organizacion, servicio, carpeta_id, limite=100):
     pagina = None
     while len(resultados) < limite:
         parametros = {
-            "q": f"'{carpeta_id}' in parents and trashed = false",
+            "q": f"'{carpeta_id}' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'",
             "fields": "nextPageToken,files(id,name,mimeType)",
             "pageSize": min(100, limite - len(resultados)),
         }
