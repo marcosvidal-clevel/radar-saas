@@ -78,6 +78,19 @@ class RevisionAntecedentesTests(TestCase):
         )
         self.assertNotIn("observaciones_revision", formulario.errors)
 
+    def test_ficha_aprobada_con_documentos_faltantes_conserva_decision(self):
+        self.candidato.revision_documental = Candidato.RevisionDocumental.APROBADO
+        self.candidato.save(update_fields=["revision_documental"])
+        self.assertEqual(
+            self.admin.revision_antecedentes(self.candidato),
+            "Por revisar: RUT, CV, título",
+        )
+        self.candidato.refresh_from_db()
+        self.assertEqual(
+            self.candidato.revision_documental,
+            Candidato.RevisionDocumental.APROBADO,
+        )
+
     def test_incompleto_se_informa_sin_rechazar_ficha(self):
         self.assertEqual(
             self.admin.revision_antecedentes(self.candidato),
