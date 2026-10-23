@@ -35,6 +35,41 @@ class FlujoImportacionTests(TestCase):
         self.assertEqual(primero["candidato_id"], segundo["candidato_id"])
         self.assertFalse(segundo["creado"])
 
+    def test_reintento_completa_campos_faltantes_sin_duplicar(self):
+        inicial = importar_candidato(
+            organizacion=self.organizacion, origen="gmail",
+            identificador="mensaje-enriquecido", texto="",
+        )
+        actualizado = importar_candidato(
+            organizacion=self.organizacion, origen="gmail",
+            identificador="mensaje-enriquecido",
+            texto="Nombre: Ana Ejemplo\nCorreo: ana@example.com",
+        )
+        candidato = Candidato.objects.get(pk=inicial["candidato_id"])
+        self.assertFalse(actualizado["creado"])
+        self.assertEqual(actualizado["candidato_id"], inicial["candidato_id"])
+        self.assertEqual(candidato.nombre, "Ana Ejemplo")
+        self.assertEqual(candidato.email, "ana@example.com")
+        self.assertEqual(Candidato.objects.filter(organizacion=self.organizacion).count(), 1)
+
+    def test_reintento_no_sobrescribe_datos_revisados(self):
+        inicial = importar_candidato(
+            organizacion=self.organizacion, origen="gmail",
+            identificador="mensaje-revisado", texto="Nombre: Nombre Original",
+        )
+        candidato = Candidato.objects.get(pk=inicial["candidato_id"])
+        candidato.nombre = "Nombre Validado"
+        candidato.email = "validado@example.com"
+        candidato.save(update_fields=["nombre", "email"])
+        importar_candidato(
+            organizacion=self.organizacion, origen="gmail",
+            identificador="mensaje-revisado",
+            texto="Nombre: Nombre Alternativo\nCorreo: nuevo@example.com",
+        )
+        candidato.refresh_from_db()
+        self.assertEqual(candidato.nombre, "Nombre Validado")
+        self.assertEqual(candidato.email, "validado@example.com")
+
     def test_archivo_incompatible_no_bloquea_ficha(self):
         resultado = importar_candidato(
             organizacion=self.organizacion, origen="prueba",
