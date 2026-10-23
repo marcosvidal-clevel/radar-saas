@@ -41,6 +41,26 @@ class ConectoresFuentesTests(SimpleTestCase):
         self.assertNotIn("alert", texto)
         self.assertNotIn("oculto", texto)
 
+    def test_drive_exporta_documento_nativo_a_pdf(self):
+        servicio = MagicMock()
+        servicio.files.return_value.list.return_value.execute.return_value = {
+            "files": [{"id": "doc-google", "name": "CV Ana", "mimeType": "application/vnd.google-apps.document"}]
+        }
+        servicio.files.return_value.export.return_value.execute.return_value = b"%PDF-test"
+        with patch("talento.conectores_fuentes.importar_carpeta_drive",
+                   return_value=[{"candidato_id": 11}]) as importar:
+            resultado = importar_drive_api(
+                organizacion=object(), servicio=servicio,
+                carpeta_id="carpeta", limite=10
+            )
+        servicio.files.return_value.export.assert_called_once_with(
+            fileId="doc-google", mimeType="application/pdf"
+        )
+        self.assertEqual(resultado, [{"candidato_id": 11}])
+        archivo = importar.call_args.kwargs["archivos"][0]
+        self.assertEqual(archivo["name"], "CV Ana.pdf")
+        self.assertEqual(archivo["contenido"], b"%PDF-test")
+
     def test_drive_continua_si_un_archivo_falla(self):
         servicio = MagicMock()
         servicio.files.return_value.list.return_value.execute.return_value = {
