@@ -34,6 +34,8 @@ class Candidato(models.Model):
     )
 
     nombre = models.CharField(max_length=200)
+    rut = models.CharField(max_length=16, blank=True, db_index=True)
+    direccion = models.CharField(max_length=250, blank=True)
     email = models.EmailField(blank=True)
     telefono = models.CharField(max_length=50, blank=True)
     linkedin = models.URLField(blank=True)
