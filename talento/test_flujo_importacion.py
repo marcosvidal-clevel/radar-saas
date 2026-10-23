@@ -119,7 +119,8 @@ class FlujoImportacionTests(TestCase):
             ids.append(resultado["candidato_id"])
         self.assertEqual(len(set(ids)), 3)
         self.assertEqual(Candidato.objects.filter(pk__in=ids).count(), 3)
-        self.assertEqual(AdjuntoImportado.objects.filter(candidato_id__in=ids).count(), 4)
+        self.assertEqual(AdjuntoImportado.objects.filter(candidato_id__in=ids).count(), 1)
+        self.assertEqual(sum(Candidato.objects.get(pk=pk).documentos.count() for pk in ids), 3)
         for identificador, texto, adjuntos in casos:
             resultado = importar_candidato(
                 organizacion=self.organizacion, origen="piloto-sintetico",
