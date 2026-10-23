@@ -49,4 +49,4 @@ jobs:
           python manage.py check
           python manage.py makemigrations --check --dry-run
       - name: Ejecutar suite completa
-        run: python manage.py test config core talento --verbosity 1
+        run: python manage.py test config core talento integraciones_google --verbosity 1
