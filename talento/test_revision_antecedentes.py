@@ -1,9 +1,13 @@
 """Pruebas del indicador informativo de antecedentes en administración."""
 from django.contrib import admin
+from django.contrib.auth import get_user_model
+from django.core.exceptions import PermissionDenied
+from django.test import RequestFactory
+from unittest.mock import patch
 from django.core.files.base import ContentFile
 from django.test import TestCase
 
-from core.models import Organizacion
+from core.models import Organizacion, Membresia
 from talento.admin import CandidatoAdmin, RevisionCandidatoForm
 from talento.models import Candidato, DocumentoCandidato
 
@@ -139,3 +143,61 @@ class RevisionAntecedentesTests(TestCase):
             archivo=ContentFile(b"%PDF-1.4\\n%%EOF", name="cv_antiguo.pdf"),
         )
         self.assertIn("CV", self.admin.revision_antecedentes(self.candidato))
+
+class AccionRevisionPendienteTests(TestCase):
+    def setUp(self):
+        self.organizacion = Organizacion.objects.create(
+            nombre="Organización autorizada", slug="revision-autorizada"
+        )
+        self.otra = Organizacion.objects.create(
+            nombre="Organización externa", slug="revision-externa"
+        )
+        self.candidato = Candidato.objects.create(
+            organizacion=self.organizacion, nombre="Autorizado",
+            revision_documental=Candidato.RevisionDocumental.RECHAZADO,
+        )
+        self.externo = Candidato.objects.create(
+            organizacion=self.otra, nombre="Externo",
+            revision_documental=Candidato.RevisionDocumental.RECHAZADO,
+        )
+        self.usuario = get_user_model().objects.create_user(
+            username="revisor_admin", password="clave_prueba", is_staff=True
+        )
+        self.request = RequestFactory().post("/admin/talento/candidato/")
+        self.request.user = self.usuario
+        self.admin = CandidatoAdmin(Candidato, admin.site)
+
+    def test_colaborador_no_puede_ejecutar_accion(self):
+        Membresia.objects.create(
+            organizacion=self.organizacion, usuario=self.usuario,
+            rol=Membresia.Rol.COLABORADOR,
+        )
+        with self.assertRaises(PermissionDenied):
+            self.admin.marcar_revision_pendiente(
+                self.request, Candidato.objects.all()
+            )
+        self.candidato.refresh_from_db()
+        self.assertEqual(
+            self.candidato.revision_documental,
+            Candidato.RevisionDocumental.RECHAZADO,
+        )
+
+    def test_supervisor_no_modifica_otra_organizacion(self):
+        Membresia.objects.create(
+            organizacion=self.organizacion, usuario=self.usuario,
+            rol=Membresia.Rol.SUPERVISOR,
+        )
+        with patch.object(self.admin, "message_user"):
+            self.admin.marcar_revision_pendiente(
+                self.request, Candidato.objects.all()
+            )
+        self.candidato.refresh_from_db()
+        self.externo.refresh_from_db()
+        self.assertEqual(
+            self.candidato.revision_documental,
+            Candidato.RevisionDocumental.PENDIENTE,
+        )
+        self.assertEqual(
+            self.externo.revision_documental,
+            Candidato.RevisionDocumental.RECHAZADO,
+        )
