@@ -1,5 +1,6 @@
 """Pruebas del indicador informativo de antecedentes en administración."""
 from django.contrib import admin
+from django.core.files.base import ContentFile
 from django.test import TestCase
 
 from core.models import Organizacion
@@ -34,6 +35,7 @@ class RevisionAntecedentesTests(TestCase):
             DocumentoCandidato.objects.create(
                 candidato=self.candidato, tipo=tipo,
                 nombre=f"Documento {tipo}",
+                archivo=ContentFile(b"%PDF-1.4\\n%%EOF", name=f"{tipo}.pdf"),
             )
         self.assertEqual(
             self.admin.revision_antecedentes(self.candidato), "Completo"
@@ -45,10 +47,12 @@ class RevisionAntecedentesTests(TestCase):
         self.candidato.documentos.create(
             nombre="CV vigente", tipo=DocumentoCandidato.Tipo.CURRICULUM,
             vigente=True,
+            archivo=ContentFile(b"%PDF-1.4\\n%%EOF", name="cv.pdf"),
         )
         self.candidato.documentos.create(
             nombre="Título antiguo", tipo=DocumentoCandidato.Tipo.TITULO,
             vigente=False,
+            archivo=ContentFile(b"%PDF-1.4\\n%%EOF", name="documento.pdf"),
         )
         self.assertEqual(
             self.admin.revision_antecedentes(self.candidato),
