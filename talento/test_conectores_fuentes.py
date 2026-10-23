@@ -143,9 +143,23 @@ class ConectoresFuentesTests(SimpleTestCase):
         self.assertEqual(resultado[1]["candidato_id"], 9)
         importar.assert_called_once()
 
+    def test_drive_acepta_identificador_con_guion_y_guion_bajo(self):
+        servicio = MagicMock()
+        servicio.files.return_value.list.return_value.execute.return_value = {"files": []}
+        self.assertEqual(
+            importar_drive_api(
+                organizacion=object(), servicio=servicio,
+                carpeta_id="folder_123-ABC", limite=1,
+            ), []
+        )
+        self.assertIn(
+            "'folder_123-ABC' in parents",
+            servicio.files.return_value.list.call_args.kwargs["q"],
+        )
+
     def test_drive_rechaza_identificador_inseguro_sin_consultar_api(self):
         servicio = MagicMock()
-        for carpeta_id in ("", "  ", "carpeta' or trashed = false", "carpeta\\nmaliciosa", None):
+        for carpeta_id in ("", "  ", "carpeta' or trashed = false", "carpeta\\nmaliciosa", "carpeta/con/ruta", "carpeta con espacio", None):
             with self.subTest(carpeta_id=carpeta_id):
                 with self.assertRaises(ValueError):
                     importar_drive_api(
