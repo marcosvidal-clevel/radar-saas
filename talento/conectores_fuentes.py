@@ -69,7 +69,7 @@ def _adjuntos(payload):
         yield from _adjuntos(parte)
 
 
-def importar_gmail_api(*, organizacion, servicio, consulta, limite=100):
+def importar_gmail_api(*, organizacion, servicio, consulta="", limite=100):
     """Lee mensajes y adjuntos sin modificar la cuenta de origen."""
     if limite <= 0:
         return []
