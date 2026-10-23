@@ -133,12 +133,16 @@ def desconectar(request, organizacion_id, conexion_id):
     if not conexion:
         from django.http import Http404
         raise Http404("Conexión no encontrada.")
-    # Revocar el grant remoto antes de destruir la copia local.
-    # Si falla la llamada remota, el token local se elimina igualmente.
+    # Inhabilitar el acceso local antes de intentar la revocación remota.
+    # La desconexión no debe depender de la disponibilidad de Google.
+    token_cifrado = conexion.token_cifrado
+    conexion.token_cifrado = ""
+    conexion.activa = False
+    conexion.save(update_fields=("token_cifrado", "activa", "actualizada_en"))
     try:
         import requests
         from talento.oauth_google import descifrar_token
-        datos = json.loads(descifrar_token(conexion.token_cifrado))
+        datos = json.loads(descifrar_token(token_cifrado))
         token = datos.get("refresh_token") or datos.get("token")
         if not token:
             raise ValueError("No existe token revocable.")
@@ -150,8 +154,5 @@ def desconectar(request, organizacion_id, conexion_id):
         respuesta.raise_for_status()
     except Exception:
         logger.warning("No se pudo confirmar revocación remota para organización %s", organizacion.pk)
-    conexion.token_cifrado = ""
-    conexion.activa = False
-    conexion.save(update_fields=("token_cifrado", "activa", "actualizada_en"))
     logger.info("Cuenta Google desconectada para organización %s", organizacion.pk)
     return redirect("google_conexiones", organizacion_id=organizacion.pk)
