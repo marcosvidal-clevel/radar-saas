@@ -33,6 +33,7 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
         "fuente",
         "activo",
         "es_prueba",
+        "origen_importacion",
     )
 
     list_filter = (
@@ -40,6 +41,7 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
         "fuente",
         "activo",
         "region",
+        "origen_importacion",
     )
 
     search_fields = (
@@ -143,6 +145,8 @@ class CandidatoAdmin(OrganizacionAdminMixin, admin.ModelAdmin):
                     "fuente",
                     "estado",
                     "notas",
+                    "origen_importacion",
+                    "identificador_origen",
                     "activo",
                     "es_prueba",
                 )
