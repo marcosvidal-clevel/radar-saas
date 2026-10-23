@@ -20,3 +20,8 @@ class RutImportacionTests(SimpleTestCase):
         )
         self.assertEqual(resultado["datos"]["rut"], "12345678-5")
         self.assertEqual(resultado["documentos"][0]["tipo"], "curriculum")
+
+    def test_rut_ausente_no_impide_preparacion(self):
+        resultado = preparar_importacion(texto="Nombre: Persona Ejemplo")
+        self.assertEqual(resultado["datos"]["rut"], "")
+        self.assertTrue(any("RUT" in nota for nota in resultado["observaciones"]))
