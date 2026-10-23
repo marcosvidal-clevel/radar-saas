@@ -174,6 +174,15 @@ class ConectoresFuentesTests(SimpleTestCase):
         self.assertEqual(resultado[1]["candidato_id"], 9)
         importar.assert_called_once()
 
+    def test_drive_no_solicita_subcarpetas_como_documentos(self):
+        servicio = MagicMock()
+        servicio.files.return_value.list.return_value.execute.return_value = {"files": []}
+        importar_drive_api(
+            organizacion=object(), servicio=servicio, carpeta_id="carpeta", limite=10,
+        )
+        consulta = servicio.files.return_value.list.call_args.kwargs["q"]
+        self.assertIn("mimeType != 'application/vnd.google-apps.folder'", consulta)
+
     def test_drive_acepta_identificador_con_guion_y_guion_bajo(self):
         servicio = MagicMock()
         servicio.files.return_value.list.return_value.execute.return_value = {"files": []}
