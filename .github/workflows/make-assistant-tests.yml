@@ -18,4 +18,4 @@ jobs:
         env:
           MAKE_API_TOKEN: ''
           MAKE_API_HOST: ''
-        run: python -m unittest discover -s tools/make_assistant -p 'test_*.py' -v
+        run: python -W error::ResourceWarning -m unittest discover -s tools/make_assistant -p 'test_*.py' -v
