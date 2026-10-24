@@ -1,6 +1,7 @@
 """Transactional outbox for commercial leads. Offline only; no external writes."""
 import json
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from commercial_pipeline import process_lead
 
@@ -18,11 +19,16 @@ class Outbox:
                 UNIQUE(lead_key, action),
                 FOREIGN KEY(lead_key) REFERENCES leads(key))""")
 
+    @contextmanager
     def connect(self):
         db = sqlite3.connect(self.path, timeout=15)
-        db.execute("PRAGMA busy_timeout=15000")
-        db.execute("PRAGMA foreign_keys=ON")
-        return db
+        try:
+            db.execute("PRAGMA busy_timeout=15000")
+            db.execute("PRAGMA foreign_keys=ON")
+            with db:
+                yield db
+        finally:
+            db.close()
 
     def enqueue(self, raw):
         result = process_lead(raw, set())
