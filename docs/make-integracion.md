@@ -14,10 +14,14 @@ Organización 1442596 (Marcos Vidal), equipo 576170, zona US1.
 | 4967558 | Integration RSS | Inactivo |
 | 2266448 | New scenario | Inactivo |
 
-El navegador tiene sesión válida. API access muestra **No items found** en
-Tokens. Por tanto, no hay autenticación API comprobada. Se preparó un formulario
-de token limitado a la organización Marcos Vidal y `scenarios:read`, sin
-crearlo. Un test local no constituye verificación de acceso real.
+El navegador tiene sesión válida. Inicialmente API access no mostraba tokens.
+Después de confirmación específica del usuario se creó el token limitado a la
+organización Marcos Vidal y `scenarios:read`. Su valor no se incluye en código,
+documentación, respaldos ni resultados. La consulta real recibió HTTP 403 y el
+diagnóstico acotado identificó Cloudflare error 1010 (browser_signature_banned),
+no una respuesta de autorización de la API. Se detuvieron los intentos. No
+hay autenticación API comprobada, ni evidencia para atribuir el bloqueo al plan.
+Un test local no constituye verificación de acceso real.
 
 ## Verificación reproducible
 

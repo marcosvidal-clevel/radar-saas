@@ -50,7 +50,18 @@ class MakeClient:
                 raw = response.read(self.MAX_BYTES + 1)
         except HTTPError as exc:
             status = exc.code
+            # Distinguish an infrastructure block from an API permission error.
+            # Inspect a bounded JSON error only; never include its raw body.
+            try:
+                error = json.loads(exc.read(8192))
+            except (ValueError, UnicodeError, OSError):
+                error = {}
             exc.close()
+            if isinstance(error, dict) and error.get("cloudflare_error") is True:
+                raise MakeAPIError(
+                    "Cloudflare bloqueó este entorno; detener intentos. "
+                    "Autenticación API no verificada."
+                ) from None
             messages = {
                 401: "Make rechazó la autenticación (HTTP 401).",
                 403: "Make denegó acceso: revisar permisos, organización o plan (HTTP 403).",

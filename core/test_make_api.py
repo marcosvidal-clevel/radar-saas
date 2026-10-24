@@ -65,6 +65,16 @@ class MakeClientTests(unittest.TestCase):
         with self.assertRaisesRegex(MakeAPIError, "no verificada"):
             self.client.verify()
 
+    def test_cloudflare_block_is_not_an_api_permission_verdict(self):
+        self.client._opener.open.side_effect = HTTPError(
+            "https://example.test", 403, "Forbidden", {},
+            io.BytesIO(json.dumps({"cloudflare_error": True, "error_code": 1010,
+                                   "detail": "private data"}).encode()),
+        )
+        with self.assertRaisesRegex(MakeAPIError, "Cloudflare") as caught:
+            self.client.verify()
+        self.assertNotIn("private data", str(caught.exception))
+
     def test_missing_expected_scenario_does_not_claim_success(self):
         self.client._opener.open.return_value = self.response({"scenarios": [scenario(4996755)]})
         with self.assertRaisesRegex(MakeAPIError, "4996645"):
