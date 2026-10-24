@@ -1,0 +1,17 @@
+{
+  "name": "Captación C-Level",
+  "steps": [
+    {
+      "action": "recibir_formulario"
+    },
+    {
+      "action": "deduplicar_lead"
+    },
+    {
+      "action": "registrar_lead"
+    },
+    {
+      "action": "notificar"
+    }
+  ]
+}
