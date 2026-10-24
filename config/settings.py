@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'core',
     'talento',
+    'integraciones',
 ]
 
 MIDDLEWARE = [
@@ -134,3 +135,6 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 # Almacenamiento privado de documentos de candidatos
 MEDIA_ROOT = BASE_DIR / "media_privada"
+
+# Disabled until an operator configures a per-site credential and organisation.
+RADAR_MAKE_INGRESS = {}
