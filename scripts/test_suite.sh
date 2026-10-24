@@ -21,4 +21,4 @@ if ((${#missing_vars[@]} > 0)); then
 fi
 
 export DJANGO_SETTINGS_MODULE=config.settings_test
-exec .venv/bin/python manage.py test config core talento --verbosity 2
+exec .venv/bin/python manage.py test config core talento integraciones --verbosity 2

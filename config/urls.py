@@ -2,6 +2,7 @@
 from django.contrib import admin
 from django.urls import path
 from talento import entradas_views
+from integraciones.comercial import commercial_ingress
 
 from core.views import (
     detalle_oportunidad,
@@ -30,6 +31,7 @@ from talento.views import (
 
 
 urlpatterns = [
+    path("integraciones/make/comercial/<slug:site>/", commercial_ingress, name="make_comercial"),
     path("seleccion/entradas/", entradas_views.bandeja, name="entradas_pendientes"),
     path("seleccion/entradas/nueva/", entradas_views.editar, name="entrada_nueva"),
     path("seleccion/entradas/<int:pk>/", entradas_views.detalle, name="entrada_detalle"),

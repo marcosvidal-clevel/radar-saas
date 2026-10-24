@@ -1,6 +1,7 @@
 """Production settings. Local development continues using config.settings."""
 
 import os
+import json
 from pathlib import Path
 
 from . import settings as base_settings
@@ -27,6 +28,9 @@ def env_list(name, required_value=False):
 
 
 SECRET_KEY = required("RADAR_SECRET_KEY")
+RADAR_MAKE_INGRESS = json.loads(os.environ.get("RADAR_MAKE_INGRESS_JSON", "{}"))
+if not isinstance(RADAR_MAKE_INGRESS, dict):
+    raise RuntimeError("RADAR_MAKE_INGRESS_JSON must contain a JSON object")
 DEBUG = False
 ALLOWED_HOSTS = env_list("RADAR_ALLOWED_HOSTS", required_value=True)
 
