@@ -1,0 +1,21 @@
+name: Make assistant tests
+on:
+  push:
+    branches: [prototype/make-assistant-v01]
+    paths:
+      - 'tools/make_assistant/**'
+      - '.github/workflows/make-assistant-tests.yml'
+  workflow_dispatch:
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run offline tests
+        env:
+          MAKE_API_TOKEN: ''
+          MAKE_API_HOST: ''
+        run: python -m unittest discover -s tools/make_assistant -p 'test_*.py' -v
