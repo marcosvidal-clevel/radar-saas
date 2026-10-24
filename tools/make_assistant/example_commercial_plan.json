@@ -1,0 +1,14 @@
+{
+  "name": "C-Level Partners — Captación comercial (borrador)",
+  "steps": [
+    {
+      "action": "webhook"
+    },
+    {
+      "action": "google_sheets_add_row"
+    },
+    {
+      "action": "email_notify"
+    }
+  ]
+}
