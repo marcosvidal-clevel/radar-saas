@@ -1,0 +1,24 @@
+name: Agent Factory Tests
+on:
+  pull_request:
+    paths:
+      - 'agent_factory/**'
+      - '.github/workflows/agent-factory-tests.yml'
+  push:
+    branches:
+      - feat/agent-factory-supervisor
+    paths:
+      - 'agent_factory/**'
+      - '.github/workflows/agent-factory-tests.yml'
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Offline supervisor and worker tests
+        run: python -m unittest discover -s agent_factory -t . -v
