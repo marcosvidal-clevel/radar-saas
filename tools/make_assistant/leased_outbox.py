@@ -13,6 +13,12 @@ class LeasedOutbox(Outbox):
                 if name not in cols:
                     db.execute(f"ALTER TABLE jobs ADD COLUMN {name} {kind}")
 
+    def mark_success(self, job_id):
+        raise RuntimeError('Use acknowledge() with a verified receipt and lease token')
+
+    def mark_failure(self, job_id, error, max_attempts=5):
+        raise RuntimeError('Use reject() with the active lease token')
+
     def claim_next(self, lease_seconds=60, now=None):
         if lease_seconds <= 0: raise ValueError("lease_seconds must be positive")
         now = time.time() if now is None else now
