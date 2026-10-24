@@ -17,7 +17,8 @@ concurrency:
 jobs:
   validate:
     name: Django, navegador y suite completa
-    runs-on: ubuntu-latest
+    # Playwright 1.56 requires a supported OS; ubuntu-latest moved to 26.04.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
       postgres:
@@ -136,9 +137,9 @@ jobs:
             echo
             echo "| Validación | Resultado | Duración |"
             echo "|---|---:|---:|"
-            echo "| Ruff (`ruff check .`) | ${ruff_result} | ${RUFF_DURATION:-n/d} |"
+            echo "| Ruff (ruff check .) | ${ruff_result} | ${RUFF_DURATION:-n/d} |"
             echo "| Django check + makemigrations --check --dry-run | ${CHECKS_OUTCOME:-no ejecutado} | ${CHECKS_DURATION:-n/d} |"
-            echo "| Suite completa config, core, talento y navegador (Chromium) | ${test_result}; ${TESTS_DISCOVERED:-sin conteo} | ${TESTS_DURATION:-n/d} |"
+            echo "| Suite completa config, core, talento, integraciones y navegador (Chromium) | ${test_result}; ${TESTS_DISCOVERED:-sin conteo} | ${TESTS_DURATION:-n/d} |"
             echo
             echo "Estado del job: **${JOB_STATUS}**"
           } >> "$GITHUB_STEP_SUMMARY"
